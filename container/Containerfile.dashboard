@@ -1,0 +1,22 @@
+# syntax=docker/dockerfile:1
+
+FROM golang:1.26-alpine AS builder
+WORKDIR /src
+
+COPY services/dashboard/go.mod ./services/dashboard/
+RUN --mount=type=cache,target=/go/pkg/mod \
+    cd services/dashboard && go mod download
+
+COPY services/dashboard ./services/dashboard
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    cd services/dashboard && CGO_ENABLED=0 GOOS=linux go build -o /out/dashboard ./cmd/dashboard
+
+FROM alpine:3.22
+WORKDIR /app
+
+RUN apk add --no-cache ca-certificates
+
+COPY --from=builder /out/dashboard /usr/local/bin/dashboard
+
+ENTRYPOINT ["/usr/local/bin/dashboard"]

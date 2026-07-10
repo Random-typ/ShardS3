@@ -1,0 +1,22 @@
+services:
+  shards3:
+    build:
+      context: ..
+      dockerfile: container/Containerfile.shards3
+    env_file:
+      - .env
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./testDir:/app/data
+    working_dir: /app/data
+
+  dashboard:
+    build:
+      context: ..
+      dockerfile: container/Containerfile.dashboard
+    depends_on:
+      - shards3
+
+#volumes:
+#  shards3_data:
