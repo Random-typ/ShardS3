@@ -10,6 +10,19 @@ import (
 	"golang.org/x/crypto/chacha20poly1305"
 )
 
+func EncryptionTypeFromString(s string) (EncryptionType, error) {
+	switch s {
+	case "None":
+		return None, nil
+	case "AES-256-GCM":
+		return AES_256_GCM, nil
+	case "ChaCha20-Poly1305":
+		return ChaCha20_Poly1305, nil
+	default:
+		return 0, fmt.Errorf("unsupported encryption type: %s", s)
+	}
+}
+
 func Encrypt(data []byte, encryption EncryptionType) ([]byte, KeyID, error) {
 	switch encryption {
 	case None:

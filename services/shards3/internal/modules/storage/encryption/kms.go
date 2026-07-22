@@ -53,8 +53,8 @@ var (
 	defaultKMS   *KMS
 )
 
-func ConfigureKMS(cfg config.Config, database *db.DB) error {
-	kms, err := NewKMS(cfg, database)
+func ConfigureKMS(database *db.DB) error {
+	kms, err := NewKMS(database)
 	if err != nil {
 		return err
 	}
@@ -89,8 +89,8 @@ func DeleteKey(keyID KeyID) error {
 	return kms.DeleteKey(keyID)
 }
 
-func NewKMS(cfg config.Config, database *db.DB) (*KMS, error) {
-	passwordKeyPath := strings.TrimSpace(cfg.KMSPasswordKeyPath)
+func NewKMS(database *db.DB) (*KMS, error) {
+	passwordKeyPath := strings.TrimSpace(config.Cfg.KMSPasswordKeyPath)
 	if passwordKeyPath == "" {
 		passwordKeyPath = defaultKMSPasswordKeyPath
 	}

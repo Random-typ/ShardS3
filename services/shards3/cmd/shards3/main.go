@@ -10,13 +10,17 @@ import (
 
 func main() {
 	fmt.Println("hello world from shards3 shards3")
-	cfg := config.Config{ServiceName: "shardshards3", SQLitePath: "shards3.db", SQLiteBusyTimeoutMS: 5000}
-	database, err := db.New(cfg)
+	err := config.LoadConfig()
+	if err != nil {
+		log.Fatalf("Config load failed: %v", err)
+	}
+
+	database, err := db.New()
 	if err != nil {
 		log.Fatalf("Failed to initialize database: %v", err)
 	}
 	defer database.Close()
-	if err := encryption.ConfigureKMS(cfg, database); err != nil {
+	if err := encryption.ConfigureKMS(database); err != nil {
 		log.Fatalf("Failed to configure KMS: %v", err)
 	}
 	fmt.Println("Database and KMS initialized successfully.")

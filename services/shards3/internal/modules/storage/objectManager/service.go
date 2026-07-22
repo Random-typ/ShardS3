@@ -2,6 +2,8 @@ package objectManager
 
 import (
 	"shards3/services/shards3/internal/modules/storage/chunker"
+	"shards3/services/shards3/internal/modules/storage/encryption"
+	"shards3/services/shards3/internal/modules/storage/interfaces"
 	"shards3/services/shards3/internal/modules/storage/metadata"
 	"shards3/services/shards3/internal/modules/storage/object"
 	"shards3/services/shards3/internal/platform/config"
@@ -21,7 +23,11 @@ import (
  */
 
 func PutObject(location object.ObjectLocation, data []byte) (object.Object, error) {
-	chunks, err := chunker.ChunkData(data, config.Cfg.EncryptionMethod)
+	encType, err := encryption.EncryptionTypeFromString(config.Cfg.EncryptionMethod)
+	if err != nil {
+		return object.Object{}, err
+	}
+	chunks, err := chunker.ChunkData(data, encType, interfaces.GetAvailableBackends())
 	if err != nil {
 		return object.Object{}, err
 	}
@@ -49,7 +55,11 @@ func GetObject(location object.ObjectLocation) (object.Object, error) {
 }
 
 func UpdateObject(location object.ObjectLocation, data []byte) (object.Object, error) {
-	chunks, err := chunker.ChunkData(data, config.Cfg.EncryptionMethod)
+	encType, err := encryption.EncryptionTypeFromString(config.Cfg.EncryptionMethod)
+	if err != nil {
+		return object.Object{}, err
+	}
+	chunks, err := chunker.ChunkData(data, encType, interfaces.GetAvailableBackends())
 	if err != nil {
 		return object.Object{}, err
 	}

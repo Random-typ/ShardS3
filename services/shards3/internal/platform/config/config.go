@@ -26,7 +26,7 @@ type Config struct {
 	CompressionLevel int `envconfig:"COMPRESSION_LEVEL" default:"3"` // 1-22 for zstd
 
 	// Encryption
-	EncryptionMethod int `envconfig:"ENCRYPTION_METHOD" default:"AES-256-GCM"` // AES-256-GCM, ChaCha20-Poly1305
+	EncryptionMethod string `envconfig:"ENCRYPTION_METHOD" default:"AES-256-GCM"` // AES-256-GCM, ChaCha20-Poly1305
 
 	// Failure Tolerance
 	FailureTolerance int `envconfig:"FAILURE_TOLERANCE" default:"2"` // Number of backends that can fail without losing data. Must be less than the number of backends.

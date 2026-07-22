@@ -4,6 +4,8 @@ import (
 	"fmt"
 )
 
+var availableBackends []BackendType
+
 /*
 *
 *
@@ -17,6 +19,17 @@ type BackendType int
 const (
 	Telegram BackendType = iota
 	Discord
+	File
+	// Used for testing purposes only. Do not use in production.
+	File2
+	File3
+	File4
+	File5
+	File1Fail
+	File2Fail
+	File3Fail
+	File4Fail
+	File5Fail
 )
 
 type Service interface {
@@ -33,9 +46,21 @@ func getService(backendType BackendType) (Service, error) {
 		return &TelegramService{}, nil
 	case Discord:
 		return &DiscordService{}, nil
+	case File, File2, File3, File4, File5:
+		return &FileService{fail: false}, nil
+	case File1Fail, File2Fail, File3Fail, File4Fail, File5Fail:
+		return &FileService{fail: true}, nil
 	default:
 		return nil, fmt.Errorf("unsupported backend type")
 	}
+}
+
+func SetAvailableBackends(backends []BackendType) {
+	availableBackends = backends
+}
+
+func GetAvailableBackends() []BackendType {
+	return availableBackends
 }
 
 func GetMaxShardSize(backendType BackendType) (int, error) {
@@ -59,7 +84,11 @@ func PutShard(backendType BackendType, data []byte) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return service.PutObject(data)
+	location, err := service.PutObject(data)
+	if err != nil {
+		return "", err
+	}
+	return location, nil
 }
 
 func DeleteShard(backendType BackendType, location string) error {

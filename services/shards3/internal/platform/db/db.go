@@ -62,6 +62,12 @@ CREATE TABLE IF NOT EXISTS kms_keys (
 	deleted_at DATETIME NULL
 );
 
+CREATE TABLE IF NOT EXISTS buckets (
+	name TEXT PRIMARY KEY,
+	created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+	updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS objects (
 	bucket TEXT NOT NULL,
 	object_key TEXT NOT NULL,
@@ -70,7 +76,8 @@ CREATE TABLE IF NOT EXISTS objects (
 	compression_level INTEGER NOT NULL,
 	created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 	updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-	PRIMARY KEY (bucket, object_key)
+	PRIMARY KEY (bucket, object_key),
+	FOREIGN KEY (bucket) REFERENCES buckets(name) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS chunks (
@@ -88,12 +95,13 @@ CREATE TABLE IF NOT EXISTS chunks (
 
 CREATE TABLE IF NOT EXISTS shards (
 	chunk_id TEXT NOT NULL,
-	shard_order INTEGER NOT NULL,
+	first INTEGER NOT NULL,
+	last INTEGER NOT NULL,
 	backend_type INTEGER NOT NULL,
 	location TEXT NOT NULL,
 	lastVerified DATETIME DEFAULT CURRENT_TIMESTAMP,
 	checksum INTEGER NOT NULL,
-	PRIMARY KEY (chunk_id, shard_order),
+	PRIMARY KEY (chunk_id, first, last),
 	FOREIGN KEY (chunk_id) REFERENCES chunks(id) ON DELETE CASCADE
 );
 
