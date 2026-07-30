@@ -1,0 +1,36 @@
+{{define "dashboard_content"}}
+
+<section class="panel">
+  <div class="panel-head">
+    <h2>Buckets</h2>
+    <span class="badge">create / delete</span>
+  </div>
+
+  <div
+    id="buckets-panel"
+    class="bucket-list stack"
+    hx-get="/fragments/buckets"
+    hx-trigger="load"
+    hx-swap="innerHTML"
+  >
+    <div class="muted">Loading buckets...</div>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <h2>Health</h2>
+    <span class="badge">live</span>
+  </div>
+
+  <div class="status-box health-panel" aria-live="polite">
+    <div class="status-row">
+      <span class="status-dot" data-health-dot></span>
+      <div>
+        <strong data-health-message>Connecting...</strong>
+        <div class="muted" data-health-detail>Waiting for the live health stream.</div>
+      </div>
+    </div>
+  </div>
+</section>
+{{end}}

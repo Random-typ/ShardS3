@@ -7,9 +7,18 @@ import (
 )
 
 type Config struct {
-	ServiceName string `envconfig:"SERVICE_NAME" default:"shardshards3"`
-	Environment string `envconfig:"ENVIRONMENT" default:"development"`
-	Address     string `envconfig:"ADDRESS" default:":8080"`
+	ServiceName  string `envconfig:"SERVICE_NAME" default:"shards3"`
+	Environment  string `envconfig:"ENVIRONMENT" default:"development"`
+	Address      string `envconfig:"ADDRESS" default:":8080"`
+	FQDN         string `envconfig:"FQDN" default:"s3.localhost"`
+	StorageClass string `envconfig:"STORAGE_CLASS" default:"STANDARD_SHARDS3"`
+
+	// S3 Auth
+	S3AccountID       string `envconfig:"S3_ACCOUNT_ID" default:"0"`
+	S3Region          string `envconfig:"S3_REGION" default:"us-east-1"`
+	S3AccessKeyID     string `envconfig:"S3_ACCESS_KEY_ID" default:"test-access-key"`
+	S3SecretAccessKey string `envconfig:"S3_SECRET_ACCESS_KEY" default:"test-secret-key"`
+	S3AllowedSkewSec  int    `envconfig:"S3_ALLOWED_SKEW_SEC" default:"300"`
 
 	// KMS config
 	KMSPasswordKeyPath string `envconfig:"KMS_PASSWORD_KEY_PATH" default:"kms.key"`
@@ -21,6 +30,11 @@ type Config struct {
 
 	// Chunking
 	ChunkSize int `envconfig:"CHUNK_SIZE" default:"134217728"` // 128 MB
+
+	// Number of chunks that may be compressed/encrypted/sharded concurrently
+	// while streaming an object upload. Bounds peak memory usage to roughly
+	// ChunkConcurrency * ChunkSize.
+	ChunkConcurrency int `envconfig:"CHUNK_CONCURRENCY" default:"4"`
 
 	// Compression
 	CompressionLevel int `envconfig:"COMPRESSION_LEVEL" default:"3"` // 1-22 for zstd

@@ -1,0 +1,19 @@
+{{define "health_fragment"}}
+{{if .Error}}
+<div class="status-row">
+  <span class="status-dot bad"></span>
+  <div>
+    <strong>Health check failed</strong>
+    <div class="muted">{{.Error}}</div>
+  </div>
+</div>
+{{else}}
+<div class="status-row">
+  <span class="status-dot"></span>
+  <div>
+    <strong>{{.Message}}</strong>
+    <div class="muted">Checked at {{.CheckedAt}}</div>
+  </div>
+</div>
+{{end}}
+{{end}}

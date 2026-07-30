@@ -24,6 +24,9 @@ In this example there are three backends:
 
 Since the smallest allowed size if 25MiB, each encoded shard must be 25MiB.  The number of allowed backends to fail is one, which is why there are three parity shards. If any of the backends fail, the data is still available. If more than one backend fails, the data is not recoverable.
 
+## Documentation
+For a detailed explanation of the program you can checkout the [docs](./docs)
+
 ## Helm
 ShardS3 can be deployed via Helm to a Kubernetes Cluster.
 
@@ -31,20 +34,44 @@ ShardS3 can be deployed via Helm to a Kubernetes Cluster.
 ```
 podman compose -f .\container\compose.yaml up
 ```
+
 ## Supported Backends
 - Telegram
 - Discord
+- Local File
 
 ## S3 API Support
-The following S3 Endpoint are supported:
+The following S3 Operations are supported:
 
-- Bucket CRUD
-- Object CRUD
 - ListObjectsV2
-- Multipart uploads
-- HEAD requests
+- HeadObject
+- GetObject
+- PutObject
+- DeleteObject
+- DeleteObjects
+- GetObjectAcl
+- GetObjectTagging
+
+- ListBuckets
+- HeadBucket
+- GetBucketLocation
+- GetBucketEncryption
+- GetBucketAcl
+
 - SigV4 authentication
 - Presigned URLs
 
-## Documentation
-For a detailed explanation of the program you can checkout the [docs](./docs)
+## Planned Features
+- Caching
+- Multipart Upload
+- Versioning
+- Tagging
+
+## Planned S3 Operations
+- CreateMultipartUpload
+- UploadPart
+- CompleteMultipartUpload
+- AbortMultipartUpload
+- ListMultipartUploads
+- ListParts
+- ...

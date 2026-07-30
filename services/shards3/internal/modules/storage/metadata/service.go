@@ -1,6 +1,11 @@
 package metadata
 
-import "shards3/services/shards3/internal/modules/storage/object"
+import (
+	"errors"
+	"sync"
+
+	"shards3/services/shards3/internal/platform/db"
+)
 
 /* Manages Metadata for objects
 *
@@ -10,44 +15,24 @@ import "shards3/services/shards3/internal/modules/storage/object"
 *
  */
 
-// Objects
-func PutObject(object object.Object) error {
-	return nil
+var (
+	defaultDBMu sync.RWMutex
+	defaultDB   *db.DB
+)
+
+// Configure wires the database instance used by this package. Must be called
+// once during startup, before any other function in this package is used.
+func Configure(database *db.DB) {
+	defaultDBMu.Lock()
+	defer defaultDBMu.Unlock()
+	defaultDB = database
 }
 
-func GetObject(object object.ObjectLocation) (object.Object, error) {
-	return object.Object{}, nil
-}
-
-func UpdateObject(object object.Object) error {
-	return nil
-}
-
-func DeleteObject(object object.ObjectLocation) error {
-	return nil
-}
-
-func ListObjects(object object.ObjectLocation) []object.Object {
-	return nil
-}
-
-// Buckets
-func CreateBucket(object object.Object) error {
-	return nil
-}
-
-//func GetBucket(object object.ObjectLocation) (object.Bucket, error) {
-//	return object.Object{}, nil
-//}
-
-//func UpdateBucket(object object.Object) error {
-//return nil
-//}
-
-func DeleteBucket(object object.ObjectLocation) error {
-	return nil
-}
-
-func ListBuckets(object object.ObjectLocation) []object.Object {
-	return nil
+func getDB() (*db.DB, error) {
+	defaultDBMu.RLock()
+	defer defaultDBMu.RUnlock()
+	if defaultDB == nil {
+		return nil, errors.New("metadata: database not configured, call Configure first")
+	}
+	return defaultDB, nil
 }

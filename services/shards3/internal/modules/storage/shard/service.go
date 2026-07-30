@@ -3,6 +3,7 @@ package shard
 import (
 	"bytes"
 	"fmt"
+	"log"
 	"math"
 	"shards3/services/shards3/internal/modules/storage/interfaces"
 	"shards3/services/shards3/internal/platform/config"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/cespare/xxhash/v2"
 	"github.com/klauspost/reedsolomon"
+	"golang.org/x/sync/errgroup"
 )
 
 type Shard struct {
@@ -76,10 +78,13 @@ func getShardParityCount(backendCount int, dataShardsCount int) int {
 func putShards(shards []RawShard, backend interfaces.BackendType) ([]Shard, error) {
 	storedShards := make([]Shard, 0, len(shards))
 	for _, shard := range shards {
+		log.Printf("trace shard_upload begin backend=%d range=[%d,%d] bytes=%d", backend, shard.First, shard.Last, len(shard.data))
 		location, err := interfaces.PutShard(backend, shard.data)
 		if err != nil {
+			log.Printf("trace shard_upload failed backend=%d range=[%d,%d] err=%v", backend, shard.First, shard.Last, err)
 			return nil, err
 		}
+		log.Printf("trace shard_upload done backend=%d range=[%d,%d] location=%s", backend, shard.First, shard.Last, location)
 		storedShards = append(storedShards, Shard{
 			First:    shard.First,
 			Last:     shard.Last,
@@ -165,15 +170,31 @@ func ShardData(data []byte, backend []interfaces.BackendType) ([]Shard, int /*da
 		return nil, 0, 0, err
 	}
 
-	// Distribute encoded shards evenly across backends.
+	// Distribute encoded shards evenly across backends. Each backend gets a
+	// contiguous block of encoded shard indices (rather than an interleaved
+	// round-robin assignment), since merged shards are later addressed by
+	// their [First,Last] index range - that range must map to a contiguous
+	// run of encoded shards for reconstruction to work. Block sizes still
+	// differ by at most one shard across backends, so the failure-tolerance
+	// math in getShardParityCount (which assumes an even split) still holds.
 	rawShards := make(map[interfaces.BackendType][]RawShard)
-	for i, shardData := range parityData {
-		backendIndex := i % len(backend)
-		rawShards[backend[backendIndex]] = append(rawShards[backend[backendIndex]], RawShard{
-			First: i,
-			Last:  i,
-			data:  shardData,
-		})
+	totalEncodedShards := len(parityData)
+	baseCount := totalEncodedShards / len(backend)
+	extraCount := totalEncodedShards % len(backend)
+	nextIndex := 0
+	for backendIndex, b := range backend {
+		count := baseCount
+		if backendIndex < extraCount {
+			count++
+		}
+		for c := 0; c < count; c++ {
+			rawShards[b] = append(rawShards[b], RawShard{
+				First: nextIndex,
+				Last:  nextIndex,
+				data:  parityData[nextIndex],
+			})
+			nextIndex++
+		}
 	}
 
 	// Merge shards for each backend up to its max shard size.
@@ -203,13 +224,31 @@ func ShardData(data []byte, backend []interfaces.BackendType) ([]Shard, int /*da
 		}
 	}
 
-	finalShards := make([]Shard, 0)
-	for _, b := range backend {
-		storedShards, err := putShards(finalRawShards[b], b)
-		if err != nil {
-			return nil, 0, 0, err
-		}
-		finalShards = append(finalShards, storedShards...)
+	// Upload each backend's shards concurrently - the backends are
+	// independent of one another, so there is no reason to wait for one
+	// backend's (potentially slow, network-bound) uploads to finish before
+	// starting the next. Results are written into disjoint, preallocated
+	// slice indices so no synchronization is needed beyond errgroup.Wait().
+	perBackendShards := make([][]Shard, len(backend))
+	var g errgroup.Group
+	for i, b := range backend {
+		i, b := i, b
+		g.Go(func() error {
+			storedShards, err := putShards(finalRawShards[b], b)
+			if err != nil {
+				return err
+			}
+			perBackendShards[i] = storedShards
+			return nil
+		})
+	}
+	if err := g.Wait(); err != nil {
+		return nil, 0, 0, err
+	}
+
+	finalShards := make([]Shard, 0, len(parityData))
+	for _, shards := range perBackendShards {
+		finalShards = append(finalShards, shards...)
 	}
 
 	return finalShards, dataShardsCount, minShardSize, nil

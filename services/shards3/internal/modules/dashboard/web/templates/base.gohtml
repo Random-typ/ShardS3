@@ -1,0 +1,42 @@
+{{define "base"}}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{.Title}}</title>
+  <link rel="stylesheet" href="/static/css/dashboard.css">
+  <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+  <script defer src="/static/js/dashboard.js"></script>
+</head>
+<body>
+  <div class="app-shell" id="top">
+    <header class="topbar">
+      <a class="brand" href="#top">ShardS3</a>
+      <div class="topbar-actions">
+        <nav class="topnav" aria-label="Primary">
+          <a href="/" class="nav-link">Dashboard</a>
+          <a href="/buckets" class="nav-link">Buckets</a>
+          <a href="/backends" class="nav-link">Backends</a>
+          <a href="/settings" class="nav-link">Settings</a>
+        </nav>
+        <div class="health-pill" aria-live="polite" title="Live health status">
+          <span class="status-dot" data-health-dot></span>
+          <span class="health-label" data-health-message>Connecting...</span>
+        </div>
+      </div>
+    </header>
+
+    <header class="hero">
+      <p class="eyebrow">ShardS3 Dashboard</p>
+      <h1>Dashboard</h1>
+      <p class="lede">Server-rendered status and bucket management for ShardS3.</p>
+    </header>
+
+    <main class="grid">
+      {{.Content}}
+    </main>
+  </div>
+</body>
+</html>
+{{end}}

@@ -21,9 +21,9 @@ func New() (*DB, error) {
 	}
 
 	// append PRAGMAs for performance and reliability
-	dsn := fmt.Sprintf("%s?_pragma=journal_mode(WAL)&_pragma=busy_timeout(%d)", dbPath, config.Cfg.SQLiteBusyTimeoutMS)
+	dsn := fmt.Sprintf("%s?_pragma=journal_mode(WAL)&_pragma=busy_timeout(%d)&_pragma=foreign_keys(1)", dbPath, config.Cfg.SQLiteBusyTimeoutMS)
 	if config.Cfg.SQLiteBusyTimeoutMS == 0 {
-		dsn = fmt.Sprintf("%s?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)", dbPath)
+		dsn = fmt.Sprintf("%s?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)", dbPath)
 	}
 
 	db, err := sql.Open("sqlite", dsn)
@@ -87,6 +87,7 @@ CREATE TABLE IF NOT EXISTS chunks (
 	ordinal INTEGER NOT NULL,
 	EncodingShardSize INTEGER NOT NULL,
 	EncodingDataShards INTEGER NOT NULL,
+	EncodingParityShards INTEGER NOT NULL DEFAULT 0,
 	encryption_type INTEGER NOT NULL,
 	key_id INTEGER NULL,
 	size INTEGER NOT NULL,

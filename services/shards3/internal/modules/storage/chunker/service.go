@@ -1,13 +1,23 @@
 package chunker
 
 import (
+	"bytes"
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"log"
+	"sync"
+
 	"shards3/services/shards3/internal/modules/storage/compression"
 	"shards3/services/shards3/internal/modules/storage/encryption"
 	"shards3/services/shards3/internal/modules/storage/interfaces"
 	"shards3/services/shards3/internal/modules/storage/shard"
 	"shards3/services/shards3/internal/platform/config"
 
+	"github.com/cespare/xxhash/v2"
 	"github.com/google/uuid"
+	"golang.org/x/sync/errgroup"
 )
 
 type Encryption encryption.Encryption
@@ -16,58 +26,180 @@ type Chunk struct {
 	Id   uuid.UUID
 	Size int64
 
-	EncodedShardSize  int
-	EncodedDataShards int
-	Encryption        Encryption
+	EncodedShardSize    int
+	EncodedDataShards   int
+	EncodedParityShards int
+	Encryption          Encryption
 
 	Shards []shard.Shard
 }
 
-// Compresses, chunks, encrypts and then shards the data, returning the resulting chunks.
+// ChunkData compresses, chunks, encrypts and shards data, returning the
+// resulting chunks. It is a convenience wrapper around ChunkStream for
+// callers that already have the whole object in memory.
 func ChunkData(data []byte, encryptionMethod encryption.EncryptionType, backends []interfaces.BackendType) ([]Chunk, error) {
-	// Compress the data
+	chunks, _, _, err := ChunkStream(bytes.NewReader(data), encryptionMethod, backends, 1)
+	return chunks, err
+}
+
+// ChunkStream reads data from r, splitting it into config.Cfg.ChunkSize
+// pieces. Each chunk is compressed independently as its own self-contained
+// unit (rather than one continuous compression stream across the whole
+// object), then encrypted and sharded. Up to `concurrency` chunks may be
+// compressed/encrypted/sharded concurrently while the next chunk's raw bytes
+// are still being read from r, bounding peak memory usage to roughly
+// concurrency * config.Cfg.ChunkSize instead of requiring the whole object to
+// be buffered in RAM up front.
+//
+// Chunks are returned in their original stream order regardless of the order
+// in which concurrent workers finish. If reading from r fails, or any chunk
+// fails to process, any chunks that had already completed successfully are
+// cleaned up (their shards deleted) before the error is returned, so a failed
+// upload doesn't leave orphaned shards behind.
+func ChunkStream(r io.Reader, encryptionMethod encryption.EncryptionType, backends []interfaces.BackendType, concurrency int) ([]Chunk, int64, uint64, error) {
+	if concurrency < 1 {
+		concurrency = 1
+	}
+	log.Printf("trace chunk_stream start concurrency=%d chunk_size=%d backend_count=%d encryption=%d", concurrency, config.Cfg.ChunkSize, len(backends), int(encryptionMethod))
+
+	g, ctx := errgroup.WithContext(context.Background())
+	g.SetLimit(concurrency)
+
+	var (
+		mu        sync.Mutex
+		completed = make(map[int]Chunk)
+	)
+
+	var (
+		totalRead int64
+		ordinal   int
+		readErr   error
+	)
+
+	digest := xxhash.New()
+	for ctx.Err() == nil {
+		buf := make([]byte, config.Cfg.ChunkSize)
+		n, err := io.ReadFull(r, buf)
+
+		if n > 0 {
+			buf = buf[:n]
+			totalRead += int64(n)
+			chunkOrdinal := ordinal
+			ordinal++
+			log.Printf("trace chunk_stream read chunk=%d bytes=%d total_read=%d", chunkOrdinal, n, totalRead)
+
+			digest.Write(buf)
+
+			g.Go(func() error {
+				log.Printf("trace chunk_stream process_begin chunk=%d", chunkOrdinal)
+				chunk, err := processChunk(buf, encryptionMethod, backends)
+				if err != nil {
+					log.Printf("trace chunk_stream process_failed chunk=%d err=%v", chunkOrdinal, err)
+					return fmt.Errorf("process chunk %d: %w", chunkOrdinal, err)
+				}
+				mu.Lock()
+				completed[chunkOrdinal] = chunk
+				mu.Unlock()
+				log.Printf("trace chunk_stream process_done chunk=%d shard_count=%d", chunkOrdinal, len(chunk.Shards))
+				return nil
+			})
+		}
+
+		if err == nil {
+			continue
+		}
+		if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+			break
+		}
+		readErr = fmt.Errorf("read object data: %w", err)
+		break
+	}
+
+	if err := g.Wait(); err != nil {
+		log.Printf("trace chunk_stream wait_failed err=%v", err)
+		cleanupChunks(completed)
+		return nil, 0, 0, err
+	}
+	if readErr != nil {
+		log.Printf("trace chunk_stream read_failed err=%v", readErr)
+		cleanupChunks(completed)
+		return nil, 0, 0, readErr
+	}
+
+	chunks := make([]Chunk, ordinal)
+	for i := 0; i < ordinal; i++ {
+		chunks[i] = completed[i]
+	}
+
+	hash := digest.Sum64()
+	log.Printf("trace chunk_stream done chunks=%d total_read=%d hash=%d", len(chunks), totalRead, hash)
+	return chunks, totalRead, hash, nil
+}
+
+// cleanupChunks best-effort deletes the shards of every already-completed
+// chunk. Used when ChunkStream fails partway through, to avoid leaving
+// orphaned shards on the storage backends for chunks that will never be
+// referenced by any object.
+func cleanupChunks(completed map[int]Chunk) {
+	for _, chunk := range completed {
+		_ = DeleteChunk(chunk)
+	}
+}
+
+// processChunk compresses, encrypts and shards a single chunk of raw bytes.
+func processChunk(data []byte, encryptionMethod encryption.EncryptionType, backends []interfaces.BackendType) (Chunk, error) {
 	compressedData, err := compression.Compress(data, compression.Compression{Type: compression.Zstd, Level: config.Cfg.CompressionLevel})
 	if err != nil {
-		return nil, err
-	}
-	// Chunk the compressed data, encrypt each chunk and then shard the encrypted chunk
-	var chunks []Chunk
-	for i := 0; i < len(compressedData); i += config.Cfg.ChunkSize {
-		end := i + config.Cfg.ChunkSize
-		end = min(end, len(compressedData))
-
-		// Encrypt the chunk
-		chunkData := compressedData[i:end]
-		encryptedData, keyId, err := encryption.Encrypt(chunkData, encryptionMethod)
-		if err != nil {
-			return nil, err
-		}
-		// Shard the encrypted chunk
-		shards, shardCount, encodedShardSize, err := shard.ShardData(encryptedData, backends)
-		if err != nil {
-			return nil, err
-		}
-
-		chunks = append(chunks, Chunk{
-			Id:                uuid.New(),
-			Size:              int64(len(encryptedData)),
-			EncodedShardSize:  encodedShardSize,
-			EncodedDataShards: shardCount,
-			Encryption:        Encryption{Type: encryptionMethod, KeyId: keyId},
-			Shards:            shards,
-		})
+		return Chunk{}, err
 	}
 
-	return chunks, nil
+	// Encrypt the chunk
+	encryptedData, keyId, err := encryption.Encrypt(compressedData, encryptionMethod)
+	if err != nil {
+		return Chunk{}, err
+	}
+
+	// Shard the encrypted chunk
+	shards, shardCount, encodedShardSize, err := shard.ShardData(encryptedData, backends)
+	if err != nil {
+		return Chunk{}, err
+	}
+
+	// Determine the parity shard count from the highest encoded shard
+	// index actually produced, since ShardData does not return it directly.
+	maxShardIndex := 0
+	for _, s := range shards {
+		if s.Last > maxShardIndex {
+			maxShardIndex = s.Last
+		}
+	}
+	parityShardCount := maxShardIndex + 1 - shardCount
+
+	return Chunk{
+		Id:                  uuid.New(),
+		Size:                int64(len(encryptedData)),
+		EncodedShardSize:    encodedShardSize,
+		EncodedDataShards:   shardCount,
+		EncodedParityShards: parityShardCount,
+		Encryption:          Encryption{Type: encryptionMethod, KeyId: keyId},
+		Shards:              shards,
+	}, nil
 }
 
 func CollectChunks(chunks []Chunk, compressionMetadata compression.Compression) ([]byte, error) {
-	var compressedData []byte
+	var data []byte
 	for _, chunk := range chunks {
 		// Collect the shards and reconstruct the encrypted chunk
-		encryptedData, err := shard.CollectShards(chunk.Shards, chunk.EncodedShardSize, chunk.EncodedDataShards, int(chunk.Size/int64(chunk.EncodedShardSize)-int64(chunk.EncodedDataShards)))
+		encryptedData, err := shard.CollectShards(chunk.Shards, chunk.EncodedShardSize, chunk.EncodedDataShards, chunk.EncodedParityShards)
 		if err != nil {
 			return nil, err
+		}
+
+		// Reconstructed data is padded up to a multiple of EncodedShardSize;
+		// trim it back down to the exact encrypted chunk length before
+		// decrypting, otherwise the trailing padding breaks AEAD auth.
+		if int64(len(encryptedData)) > chunk.Size {
+			encryptedData = encryptedData[:chunk.Size]
 		}
 
 		// Decrypt the chunk
@@ -79,11 +211,18 @@ func CollectChunks(chunks []Chunk, compressionMetadata compression.Compression) 
 			return nil, err
 		}
 
-		compressedData = append(compressedData, decryptedData...)
+		// Each chunk was compressed independently, so it must be decompressed
+		// independently too - unlike encryption/sharding, compression state
+		// does not span multiple chunks.
+		decompressedChunk, err := compression.Decompress(decryptedData, compressionMetadata)
+		if err != nil {
+			return nil, err
+		}
+
+		data = append(data, decompressedChunk...)
 	}
 
-	// Decompress the data
-	return compression.Decompress(compressedData, compressionMetadata)
+	return data, nil
 }
 
 func DeleteChunk(chunk Chunk) error {

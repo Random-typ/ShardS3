@@ -1,0 +1,63 @@
+{{define "buckets_fragment"}}
+<div class="stack">
+  <form class="row" hx-post="/fragments/buckets" hx-target="#buckets-panel" hx-swap="innerHTML">
+    <div class="row">
+      <input type="text" name="bucket_name" placeholder="new-bucket" autocomplete="off" />
+      <button type="submit">Create bucket</button>
+    </div>
+  </form>
+
+  {{if .Buckets}}
+  <div class="bucket-grid" role="list" aria-label="Buckets">
+    {{range .Buckets}}
+    <article
+      class="bucket-card bucket-card-action"
+      role="listitem"
+      hx-get="/fragments/buckets/{{.Name}}/objects"
+      hx-target="#bucket-browser-panel"
+      hx-swap="innerHTML"
+    >
+      <div class="bucket-card-head">
+        <div class="bucket-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="30" height="30" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M4 8.5C4 7.12 7.58 6 12 6C16.42 6 20 7.12 20 8.5M4 8.5V15.5C4 16.88 7.58 18 12 18C16.42 18 20 16.88 20 15.5V8.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M4 12C4 13.38 7.58 14.5 12 14.5C16.42 14.5 20 13.38 20 12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </div>
+        <div>
+          <h3 class="bucket-name">{{.Name}}</h3>
+          <div class="muted">{{.ObjectCount}} objects</div>
+        </div>
+      </div>
+
+      <dl class="bucket-stats">
+        <div>
+          <dt>Total size</dt>
+          <dd>{{formatBytes .Size}}</dd>
+        </div>
+        <div>
+          <dt>Object count</dt>
+          <dd>{{.ObjectCount}}</dd>
+        </div>
+      </dl>
+
+      <details class="delete-confirm">
+        <summary class="delete-trigger">Delete</summary>
+        <p class="warning-text">Warning: deleting bucket <strong>{{.Name}}</strong> will permanently remove all objects and metadata from this bucket.</p>
+        <form hx-post="/fragments/buckets/delete" hx-target="#buckets-panel" hx-swap="innerHTML" hx-on:click="event.stopPropagation()">
+          <input type="hidden" name="bucket_name" value="{{.Name}}" />
+          <button type="submit" class="danger tiny">Yes, delete bucket</button>
+        </form>
+      </details>
+    </article>
+    {{end}}
+  </div>
+
+  <section id="bucket-browser-panel" class="object-browser-panel status-box" aria-live="polite">
+    <div class="muted">Select a bucket to browse its objects.</div>
+  </section>
+  {{else}}
+  <div class="muted">No buckets yet.</div>
+  {{end}}
+</div>
+{{end}}

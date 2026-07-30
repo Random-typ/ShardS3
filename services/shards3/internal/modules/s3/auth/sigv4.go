@@ -1,5 +1,7 @@
 package auth
 
+import "net/http"
+
 type SigV4 interface {
-	VerifyAuthorizationHeader(authHeader string) error
+	VerifyRequest(r *http.Request) error
 }

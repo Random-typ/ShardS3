@@ -1,0 +1,68 @@
+{{define "objects_fragment"}}
+<div class="object-browser stack">
+  <div class="object-browser-head">
+    <div>
+      <h3 class="object-browser-title">{{.Bucket}}</h3>
+      <div class="muted">Path: {{.DisplayPath}}</div>
+    </div>
+    {{if .HasParent}}
+    <button
+      type="button"
+      class="secondary-button"
+      hx-get="/fragments/buckets/{{.Bucket}}/objects?prefix={{.ParentPrefix}}"
+      hx-target="#bucket-browser-panel"
+      hx-swap="innerHTML"
+    >
+      Up one level
+    </button>
+    {{end}}
+  </div>
+
+  {{if .Entries}}
+  <div class="object-table-wrap">
+    <table class="object-table">
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Created</th>
+          <th>Size</th>
+          <th>Chunks</th>
+          <th>Shards</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{range .Entries}}
+        <tr class="{{if .IsDir}}dir-row{{else}}file-row{{end}}">
+          <td>
+            {{if .IsDir}}
+            <button
+              type="button"
+              class="entry-link"
+              hx-get="/fragments/buckets/{{$.Bucket}}/objects?prefix={{.Path}}"
+              hx-target="#bucket-browser-panel"
+              hx-swap="innerHTML"
+            >
+              <span class="entry-icon" aria-hidden="true">&#128193;</span>
+              <span>{{.Name}}/</span>
+            </button>
+            {{else}}
+            <div class="entry-name">
+              <span class="entry-icon" aria-hidden="true">&#128196;</span>
+              <span>{{.Name}}</span>
+            </div>
+            {{end}}
+          </td>
+          <td>{{if .IsDir}}-{{else}}{{.Created.Format "2006-01-02 15:04:05"}}{{end}}</td>
+          <td>{{if .IsDir}}-{{else}}{{formatBytes .Size}}{{end}}</td>
+          <td>{{if .IsDir}}-{{else}}{{.ChunkCount}}{{end}}</td>
+          <td>{{if .IsDir}}-{{else}}{{.ShardCount}}{{end}}</td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+  {{else}}
+  <div class="muted">No objects found in this location.</div>
+  {{end}}
+</div>
+{{end}}

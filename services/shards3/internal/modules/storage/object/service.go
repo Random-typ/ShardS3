@@ -6,12 +6,19 @@ import (
 	"time"
 )
 
-type Bucket string
-type Key string
-
+type Bucket struct {
+	Name      string
+	CreatedAt time.Time
+}
 type ObjectLocation struct {
 	Bucket Bucket
-	Key    Key
+	Key    string
+}
+
+type BucketStats struct {
+	Bucket       Bucket
+	TotalObjects int64
+	TotalSize    int64
 }
 
 type Object struct {
@@ -20,7 +27,9 @@ type Object struct {
 
 	Compression compression.Compression
 
-	Created time.Time
+	LastModified time.Time
+	// Checksum. Always of type FULL_OBJECT, uses XXHASH64 algorithm.
+	ETag uint64
 
 	Chunks []chunker.Chunk
 }
