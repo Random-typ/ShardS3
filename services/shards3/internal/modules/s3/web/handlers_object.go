@@ -613,3 +613,34 @@ func (s *Server) GetObjectAcl(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte(xml.Header))
 	_, _ = w.Write(payload)
 }
+
+func (s *Server) GetObjectTagging(w http.ResponseWriter, r *http.Request) {
+	bucketName, ok := bucketFromHost(r.Host, config.Cfg.FQDN)
+	if !ok {
+		writeS3Error(w, http.StatusBadRequest, "InvalidBucketName", "bucket subdomain is required", bucketName)
+		return
+	}
+	_, err := objectManager.GetObject(object.ObjectLocation{
+		Bucket: object.Bucket{Name: bucketName},
+		Key:    r.URL.Path,
+	})
+	if err != nil {
+		writeS3Error(w, http.StatusInternalServerError, "InternalError", err.Error(), bucketName)
+		return
+	}
+	Tagging := Tagging{
+		Xmlns:  "http://s3.amazonaws.com/doc/2006-03-01/",
+		TagSet: nil,
+	}
+
+	payload, err := xml.MarshalIndent(Tagging, "", "  ")
+	if err != nil {
+		writeS3Error(w, http.StatusInternalServerError, "InternalError", "failed to encode response", bucketName)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/xml")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(xml.Header))
+	_, _ = w.Write(payload)
+}

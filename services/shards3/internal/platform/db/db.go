@@ -71,6 +71,7 @@ CREATE TABLE IF NOT EXISTS buckets (
 CREATE TABLE IF NOT EXISTS objects (
 	bucket TEXT NOT NULL,
 	object_key TEXT NOT NULL,
+	ETag TEXT NULL,
 	size INTEGER NOT NULL,
 	compression_type INTEGER NOT NULL,
 	compression_level INTEGER NOT NULL,

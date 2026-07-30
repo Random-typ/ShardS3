@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"shards3/services/shards3/internal/modules/storage/compression"
 	"shards3/services/shards3/internal/modules/storage/object"
+	"strconv"
 	"time"
 )
 
@@ -104,14 +105,15 @@ func upsertObject(obj object.Object) error {
 	}
 
 	if _, err := tx.Exec(`
-		INSERT INTO objects (bucket, object_key, size, compression_type, compression_level, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO objects (bucket, object_key, ETag, size, compression_type, compression_level, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(bucket, object_key) DO UPDATE SET
+			ETag = excluded.ETag,
 			size = excluded.size,
 			compression_type = excluded.compression_type,
 			compression_level = excluded.compression_level,
 			updated_at = excluded.updated_at`,
-		string(obj.Location.Bucket.Name), string(obj.Location.Key), obj.Size,
+		string(obj.Location.Bucket.Name), string(obj.Location.Key), obj.ETag, obj.Size,
 		int(obj.Compression.Type), obj.Compression.Level, now, now,
 	); err != nil {
 		return fmt.Errorf("upsert object: %w", err)
@@ -131,7 +133,6 @@ func upsertObject(obj object.Object) error {
 	return tx.Commit()
 }
 
-// Objects
 func PutObject(obj object.Object) error {
 	return upsertObject(obj)
 }
@@ -142,15 +143,16 @@ func GetObject(location object.ObjectLocation) (object.Object, error) {
 		return object.Object{}, err
 	}
 
+	var eTag string
 	var size int64
 	var compType int
 	var compLevel int
 	var created time.Time
 	err = database.QueryRow(`
-		SELECT size, compression_type, compression_level, created_at
+		SELECT ETag, size, compression_type, compression_level, created_at
 		FROM objects WHERE bucket = ? AND object_key = ?`,
 		string(location.Bucket.Name), string(location.Key),
-	).Scan(&size, &compType, &compLevel, &created)
+	).Scan(&eTag, &size, &compType, &compLevel, &created)
 	if errors.Is(err, sql.ErrNoRows) {
 		return object.Object{}, fmt.Errorf("object not found: %s/%s", location.Bucket.Name, location.Key)
 	}
@@ -163,8 +165,14 @@ func GetObject(location object.ObjectLocation) (object.Object, error) {
 		return object.Object{}, err
 	}
 
+	eTagUint, err := strconv.ParseUint(eTag, 10, 64)
+	if err != nil {
+		return object.Object{}, fmt.Errorf("parse ETag: %w", err)
+	}
+
 	return object.Object{
 		Location:     location,
+		ETag:         eTagUint,
 		Size:         size,
 		Compression:  compression.Compression{Type: compression.CompressionType(compType), Level: compLevel},
 		LastModified: created,
