@@ -67,11 +67,10 @@ The following S3 Operations are supported:
 - Versioning
 - Tagging
 
-## Planned S3 Operations
+## Soon to be implemented S3 Operations
 - CreateMultipartUpload
 - UploadPart
 - CompleteMultipartUpload
 - AbortMultipartUpload
 - ListMultipartUploads
 - ListParts
-- ...

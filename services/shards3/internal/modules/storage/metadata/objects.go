@@ -113,7 +113,7 @@ func upsertObject(obj object.Object) error {
 			compression_type = excluded.compression_type,
 			compression_level = excluded.compression_level,
 			updated_at = excluded.updated_at`,
-		string(obj.Location.Bucket.Name), string(obj.Location.Key), obj.ETag, obj.Size,
+		obj.Location.Bucket.Name, obj.Location.Key, strconv.FormatUint(obj.ETag, 10), obj.Size,
 		int(obj.Compression.Type), obj.Compression.Level, now, now,
 	); err != nil {
 		return fmt.Errorf("upsert object: %w", err)

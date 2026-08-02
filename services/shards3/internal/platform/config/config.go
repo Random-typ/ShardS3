@@ -7,11 +7,13 @@ import (
 )
 
 type Config struct {
-	ServiceName  string `envconfig:"SERVICE_NAME" default:"shards3"`
-	Environment  string `envconfig:"ENVIRONMENT" default:"development"`
-	Address      string `envconfig:"ADDRESS" default:":8080"`
-	FQDN         string `envconfig:"FQDN" default:"s3.localhost"`
-	StorageClass string `envconfig:"STORAGE_CLASS" default:"STANDARD_SHARDS3"`
+	ServiceName      string `envconfig:"SERVICE_NAME" default:"shards3"`
+	Environment      string `envconfig:"ENVIRONMENT" default:"development"`
+	S3Address        string `envconfig:"ADDRESS" default:":8080"`
+	DashboardAddress string `envconfig:"DASHBOARD_ADDRESS" default:":8088"`
+	FQDN             string `envconfig:"FQDN" default:"s3.localhost"`
+	StorageClass     string `envconfig:"STORAGE_CLASS" default:"STANDARD_SHARDS3"`
+	EnableDashboard  bool   `envconfig:"ENABLE_DASHBOARD" default:"true"`
 
 	// S3 Auth
 	S3AccountID       string `envconfig:"S3_ACCOUNT_ID" default:"0"`
