@@ -7,7 +7,8 @@ import (
 )
 
 func TestFileServicePutObject_CreatesStorageDirectory(t *testing.T) {
-	storageDir := getStorageDirectory()
+	svc := &FileService{fail: false}
+	storageDir := svc.storageDirectory()
 	if err := os.RemoveAll(storageDir); err != nil {
 		t.Fatalf("RemoveAll(%q) error: %v", storageDir, err)
 	}
@@ -15,7 +16,6 @@ func TestFileServicePutObject_CreatesStorageDirectory(t *testing.T) {
 		_ = os.RemoveAll(storageDir)
 	})
 
-	svc := &FileService{fail: false}
 	location, err := svc.PutObject([]byte("payload"))
 	if err != nil {
 		t.Fatalf("PutObject() error: %v", err)

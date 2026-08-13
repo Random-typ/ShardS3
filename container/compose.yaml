@@ -9,6 +9,7 @@ services:
       - "8080:8080"
     volumes:
       - ./testDir:/app/data
+      - ../services/shards3/backends.yaml:/app/data/backends.yaml
     working_dir: /app/data
 
   dashboard:

@@ -5,10 +5,12 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 	"time"
 
+	"shards3/services/shards3/internal/modules/storage/interfaces"
 	"shards3/services/shards3/internal/modules/storage/metadata"
 	"shards3/services/shards3/internal/modules/storage/object"
 	"shards3/services/shards3/internal/platform/db"
@@ -36,6 +38,22 @@ type ObjectEntry struct {
 	Size         int64
 	ChunkCount   int
 	ShardCount   int
+}
+
+type BackendStats struct {
+	Name            string
+	Configured      bool
+	TotalShards     int64
+	TotalBytes      int64
+	TotalChunks     int64
+	TotalObjects    int64
+	TotalBuckets    int64
+	BytesShare      float64
+	ShardsShare     float64
+	LastVerified    time.Time
+	HasLastVerified bool
+	MaxShardSize    int
+	MaxShardSizeErr string
 }
 
 func NewService(database *db.DB) *Service {
@@ -91,6 +109,98 @@ func (s *Service) ListBucketsWithStats() ([]object.BucketStats, error) {
 
 func (s *Service) ListObjects(bucketName string, prefix string) ([]object.Object, bool, error) {
 	return metadata.ListObjects(object.Bucket{Name: bucketName}, prefix, "/", "", 1, 100)
+}
+
+func (s *Service) ListBackendStats() ([]BackendStats, error) {
+	rawStats, err := metadata.ListBackendStats()
+	if err != nil {
+		return nil, fmt.Errorf("list backend stats: %w", err)
+	}
+
+	statsByName := make(map[string]object.BackendStats, len(rawStats))
+	for _, stat := range rawStats {
+		statsByName[stat.Backend] = stat
+	}
+
+	configuredSet := map[string]struct{}{}
+	configured := interfaces.GetAvailableBackends()
+	result := make([]BackendStats, 0, len(rawStats)+len(configured))
+
+	var maxBytes int64 = 1
+	var maxShards int64 = 1
+
+	for _, backendID := range configured {
+		name := string(backendID)
+		configuredSet[name] = struct{}{}
+		entry := BackendStats{Name: name, Configured: true}
+
+		if stat, ok := statsByName[name]; ok {
+			entry.TotalShards = stat.TotalShards
+			entry.TotalBytes = stat.TotalBytes
+			entry.TotalChunks = stat.TotalChunks
+			entry.TotalObjects = stat.TotalObjects
+			entry.TotalBuckets = stat.TotalBuckets
+			entry.LastVerified = stat.LastVerified
+			entry.HasLastVerified = !stat.LastVerified.IsZero()
+		}
+
+		maxSize, sizeErr := interfaces.GetMaxShardSize(backendID)
+		if sizeErr != nil {
+			entry.MaxShardSizeErr = sizeErr.Error()
+		} else {
+			entry.MaxShardSize = maxSize
+		}
+
+		if entry.TotalBytes > maxBytes {
+			maxBytes = entry.TotalBytes
+		}
+		if entry.TotalShards > maxShards {
+			maxShards = entry.TotalShards
+		}
+
+		result = append(result, entry)
+	}
+
+	for _, stat := range rawStats {
+		if _, ok := configuredSet[stat.Backend]; ok {
+			continue
+		}
+
+		entry := BackendStats{
+			Name:            stat.Backend,
+			Configured:      false,
+			TotalShards:     stat.TotalShards,
+			TotalBytes:      stat.TotalBytes,
+			TotalChunks:     stat.TotalChunks,
+			TotalObjects:    stat.TotalObjects,
+			TotalBuckets:    stat.TotalBuckets,
+			LastVerified:    stat.LastVerified,
+			HasLastVerified: !stat.LastVerified.IsZero(),
+		}
+
+		if entry.TotalBytes > maxBytes {
+			maxBytes = entry.TotalBytes
+		}
+		if entry.TotalShards > maxShards {
+			maxShards = entry.TotalShards
+		}
+
+		result = append(result, entry)
+	}
+
+	for i := range result {
+		result[i].BytesShare = percentOf(result[i].TotalBytes, maxBytes)
+		result[i].ShardsShare = percentOf(result[i].TotalShards, maxShards)
+	}
+
+	sort.Slice(result, func(i, j int) bool {
+		if result[i].Configured != result[j].Configured {
+			return result[i].Configured
+		}
+		return strings.ToLower(result[i].Name) < strings.ToLower(result[j].Name)
+	})
+
+	return result, nil
 }
 
 func (s *Service) BrowseObjects(bucketName string, prefix string) ([]ObjectEntry, error) {
@@ -202,4 +312,12 @@ func normalizePrefix(prefix string) string {
 	}
 
 	return prefix
+}
+
+func percentOf(value int64, max int64) float64 {
+	if value <= 0 || max <= 0 {
+		return 0
+	}
+	p := (float64(value) / float64(max)) * 100
+	return math.Round(p*100) / 100
 }

@@ -70,6 +70,9 @@ func (s *Server) handleBucketPresentPost(w http.ResponseWriter, r *http.Request)
 	case r.URL.Query().Has("delete"):
 		s.DeleteObjects(w, r)
 		return
+	case r.URL.Query().Has("uploads"):
+		s.CreateMultipartUpload(w, r)
+		return
 	default:
 		writeS3Error(w, http.StatusInternalServerError, "InternalError", "request cannot be handled", "")
 	}

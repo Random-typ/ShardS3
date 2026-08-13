@@ -37,8 +37,8 @@ type Chunk struct {
 // ChunkData compresses, chunks, encrypts and shards data, returning the
 // resulting chunks. It is a convenience wrapper around ChunkStream for
 // callers that already have the whole object in memory.
-func ChunkData(data []byte, encryptionMethod encryption.EncryptionType, backends []interfaces.BackendType) ([]Chunk, error) {
-	chunks, _, _, err := ChunkStream(bytes.NewReader(data), encryptionMethod, backends, 1)
+func ChunkData(data []byte, encryptionMethod encryption.EncryptionType, compression compression.Compression, backends []interfaces.BackendType) ([]Chunk, error) {
+	chunks, _, _, err := ChunkStream(bytes.NewReader(data), encryptionMethod, compression, backends, 1)
 	return chunks, err
 }
 
@@ -56,7 +56,7 @@ func ChunkData(data []byte, encryptionMethod encryption.EncryptionType, backends
 // fails to process, any chunks that had already completed successfully are
 // cleaned up (their shards deleted) before the error is returned, so a failed
 // upload doesn't leave orphaned shards behind.
-func ChunkStream(r io.Reader, encryptionMethod encryption.EncryptionType, backends []interfaces.BackendType, concurrency int) ([]Chunk, int64, uint64, error) {
+func ChunkStream(r io.Reader, encryptionMethod encryption.EncryptionType, compression compression.Compression, backends []interfaces.BackendType, concurrency int) ([]Chunk, int64, uint64, error) {
 	if concurrency < 1 {
 		concurrency = 1
 	}
@@ -92,7 +92,7 @@ func ChunkStream(r io.Reader, encryptionMethod encryption.EncryptionType, backen
 
 			g.Go(func() error {
 				log.Printf("trace chunk_stream process_begin chunk=%d", chunkOrdinal)
-				chunk, err := processChunk(buf, encryptionMethod, backends)
+				chunk, err := processChunk(buf, encryptionMethod, compression, backends)
 				if err != nil {
 					log.Printf("trace chunk_stream process_failed chunk=%d err=%v", chunkOrdinal, err)
 					return fmt.Errorf("process chunk %d: %w", chunkOrdinal, err)
@@ -147,8 +147,8 @@ func cleanupChunks(completed map[int]Chunk) {
 }
 
 // processChunk compresses, encrypts and shards a single chunk of raw bytes.
-func processChunk(data []byte, encryptionMethod encryption.EncryptionType, backends []interfaces.BackendType) (Chunk, error) {
-	compressedData, err := compression.Compress(data, compression.Compression{Type: compression.Zstd, Level: config.Cfg.CompressionLevel})
+func processChunk(data []byte, encryptionMethod encryption.EncryptionType, compressionMetadata compression.Compression, backends []interfaces.BackendType) (Chunk, error) {
+	compressedData, err := compression.Compress(data, compressionMetadata)
 	if err != nil {
 		return Chunk{}, err
 	}

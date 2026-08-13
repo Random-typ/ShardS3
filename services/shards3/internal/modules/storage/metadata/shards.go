@@ -25,7 +25,7 @@ func getShards(database *db.DB, chunkID string) ([]shard.Shard, error) {
 	var shards []shard.Shard
 	for rows.Next() {
 		var s shard.Shard
-		var backendType int
+		var backendType string
 		if err := rows.Scan(&s.First, &s.Last, &backendType, &s.Location, &s.Checksum); err != nil {
 			return nil, fmt.Errorf("scan shard: %w", err)
 		}
@@ -45,7 +45,7 @@ func insertShards(tx *sql.Tx, chunkID string, shards []shard.Shard) error {
 		if _, err := tx.Exec(`
 			INSERT INTO shards (chunk_id, first, last, backend_type, location, lastVerified, checksum)
 			VALUES (?, ?, ?, ?, ?, ?, ?)`,
-			chunkID, s.First, s.Last, int(s.Backend), s.Location, now, s.Checksum,
+			chunkID, s.First, s.Last, string(s.Backend), s.Location, now, s.Checksum,
 		); err != nil {
 			return fmt.Errorf("insert shard [%d,%d] for chunk %s: %w", s.First, s.Last, chunkID, err)
 		}

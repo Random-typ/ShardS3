@@ -2,11 +2,113 @@
 <section class="panel">
   <div class="panel-head">
     <h2>Backends</h2>
-    <span class="badge">coming soon</span>
+    <span class="badge">live metadata</span>
   </div>
 
-  <div class="status-box">
-    <div class="muted">Backend configuration will appear here.</div>
+  {{if .BackendStats}}
+  <div class="backend-summary-grid" role="list" aria-label="Backend summary">
+    <article class="backend-summary-card" role="listitem">
+      <div class="backend-summary-label">Configured backends</div>
+      <div class="backend-summary-value">
+        {{range .BackendStats}}{{if .Configured}}{{.Name}} {{end}}{{end}}
+      </div>
+    </article>
+    <article class="backend-summary-card" role="listitem">
+      <div class="backend-summary-label">Backends in use</div>
+      <div class="backend-summary-value">
+        {{range .BackendStats}}{{if gt .TotalShards 0}}{{.Name}} {{end}}{{end}}
+      </div>
+    </article>
   </div>
+
+  <section class="backend-distribution" aria-label="Backend distribution">
+    <div class="backend-distribution-head">
+      <h3>Backend distribution</h3>
+      <p class="muted">Pie chart uses stored bytes. If all byte values are zero, it falls back to shard count.</p>
+    </div>
+
+    <div class="backend-distribution-grid" data-backend-pie>
+      <div class="backend-pie-wrap">
+        <div class="backend-pie-visual" data-backend-pie-visual role="img" aria-label="Backend distribution pie chart"></div>
+      </div>
+
+      <ul class="backend-pie-legend" data-backend-pie-legend>
+        {{range .BackendStats}}
+        <li
+          data-backend-pie-item
+          data-label="{{.Name}}"
+          data-bytes="{{.TotalBytes}}"
+          data-shards="{{.TotalShards}}"
+        >
+          <span class="backend-pie-swatch"></span>
+          <span class="backend-pie-name">{{.Name}}</span>
+          <span class="backend-pie-percent">0%</span>
+          <span class="backend-pie-detail">{{formatBytes .TotalBytes}} | {{.TotalShards}} shards</span>
+        </li>
+        {{end}}
+      </ul>
+    </div>
+  </section>
+
+  <div class="backend-chart stack" role="img" aria-label="Graph of backend stored bytes and shard counts">
+    {{range .BackendStats}}
+    <article class="backend-row {{if not .Configured}}backend-row-muted{{end}}">
+      <div class="backend-row-head">
+        <div>
+          <h3 class="backend-name">{{.Name}}</h3>
+          <p class="backend-meta">
+            {{if .Configured}}configured{{else}}not configured in current runtime{{end}}
+            {{if .HasLastVerified}} | last verified {{formatTime .LastVerified}}{{end}}
+          </p>
+        </div>
+        <div class="backend-limit">
+          {{if .MaxShardSizeErr}}
+          <span class="muted">Max shard size unavailable</span>
+          {{else}}
+          <span>Max shard size {{formatBytesInt .MaxShardSize}}</span>
+          {{end}}
+        </div>
+      </div>
+
+      <div class="backend-bars">
+        <div class="backend-bar-wrap">
+          <div class="backend-bar-label">Stored bytes</div>
+          <div class="backend-bar-track">
+            <div class="backend-bar backend-bar-bytes" style="width: {{printf "%.2f" .BytesShare}}%;"></div>
+          </div>
+          <div class="backend-bar-value">{{formatBytes .TotalBytes}}</div>
+        </div>
+
+        <div class="backend-bar-wrap">
+          <div class="backend-bar-label">Shard count</div>
+          <div class="backend-bar-track">
+            <div class="backend-bar backend-bar-shards" style="width: {{printf "%.2f" .ShardsShare}}%;"></div>
+          </div>
+          <div class="backend-bar-value">{{.TotalShards}}</div>
+        </div>
+      </div>
+
+      <dl class="backend-kpis">
+        <div>
+          <dt>Chunks</dt>
+          <dd>{{.TotalChunks}}</dd>
+        </div>
+        <div>
+          <dt>Objects</dt>
+          <dd>{{.TotalObjects}}</dd>
+        </div>
+        <div>
+          <dt>Buckets</dt>
+          <dd>{{.TotalBuckets}}</dd>
+        </div>
+      </dl>
+    </article>
+    {{end}}
+  </div>
+  {{else}}
+  <div class="status-box">
+    <div class="muted">No backend stats available yet. Store data to generate usage graphs.</div>
+  </div>
+  {{end}}
 </section>
 {{end}}

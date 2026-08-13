@@ -94,20 +94,18 @@ func TestObjectLifecycle_MultipleBackends(t *testing.T) {
 
 	backendConfigs := []struct {
 		name      string
-		backends  []interfaces.BackendType
+		count     int
 		tolerance int
 	}{
-		{"SingleBackend", []interfaces.BackendType{interfaces.File}, 0},
-		{"TwoBackends", []interfaces.BackendType{interfaces.File, interfaces.File2}, 1},
-		{"FiveBackends", []interfaces.BackendType{
-			interfaces.File, interfaces.File2, interfaces.File3, interfaces.File4, interfaces.File5,
-		}, 2},
+		{"SingleBackend", 1, 0},
+		{"TwoBackends", 2, 1},
+		{"FiveBackends", 5, 2},
 	}
 
 	for _, bc := range backendConfigs {
 		t.Run(bc.name, func(t *testing.T) {
 			setupTest(t)
-			interfaces.SetAvailableBackends(bc.backends)
+			interfaces.SetAvailableBackends(interfaces.RegisterFileTestBackends(bc.count))
 			config.Cfg.FailureTolerance = bc.tolerance
 
 			location := object.ObjectLocation{Bucket: object.Bucket{Name: "lifecycle-bucket"}, Key: "lifecycle-" + bc.name}
@@ -125,7 +123,7 @@ func TestObjectLifecycle_MultipleBackends(t *testing.T) {
 				t.Fatalf("Size mismatch: got=%d want=%d", obj.Size, len(data))
 			}
 
-			got, err := obj.GetData()
+			got, err := obj.GetData(0, 0)
 			if err != nil {
 				t.Fatalf("GetData() error: %v", err)
 			}
@@ -146,7 +144,7 @@ func TestObjectLifecycle_MultipleBackends(t *testing.T) {
 				t.Fatalf("Size after update mismatch: got=%d want=%d", updatedObj.Size, len(updatedData))
 			}
 
-			gotUpdated, err := updatedObj.GetData()
+			gotUpdated, err := updatedObj.GetData(0, 0)
 			if err != nil {
 				t.Fatalf("GetData() after update error: %v", err)
 			}
@@ -176,7 +174,7 @@ func TestObjectLifecycle_MultipleBackends(t *testing.T) {
 func TestObjectLifecycle_ChunkBoundarySizes(t *testing.T) {
 	setupTest(t)
 
-	backends := []interfaces.BackendType{interfaces.File, interfaces.File2, interfaces.File3}
+	backends := interfaces.RegisterFileTestBackends(3)
 	interfaces.SetAvailableBackends(backends)
 	config.Cfg.FailureTolerance = 1
 
@@ -216,7 +214,7 @@ func TestObjectLifecycle_ChunkBoundarySizes(t *testing.T) {
 				t.Fatalf("expected multiple chunks for payload size %d, got %d chunk(s)", sc.size, len(obj.Chunks))
 			}
 
-			got, err := obj.GetData()
+			got, err := obj.GetData(0, 0)
 			if err != nil {
 				t.Fatalf("GetData() error: %v", err)
 			}
@@ -244,7 +242,7 @@ func TestObjectLifecycle_ChunkBoundarySizes(t *testing.T) {
 func TestObjectLifecycle_Streaming(t *testing.T) {
 	setupTest(t)
 
-	interfaces.SetAvailableBackends([]interfaces.BackendType{interfaces.File, interfaces.File2, interfaces.File3})
+	interfaces.SetAvailableBackends(interfaces.RegisterFileTestBackends(3))
 	config.Cfg.FailureTolerance = 1
 	config.Cfg.ChunkConcurrency = 4
 
@@ -264,7 +262,7 @@ func TestObjectLifecycle_Streaming(t *testing.T) {
 		t.Fatalf("expected multiple chunks, got %d", len(obj.Chunks))
 	}
 
-	got, err := obj.GetData()
+	got, err := obj.GetData(0, 0)
 	if err != nil {
 		t.Fatalf("GetData() error: %v", err)
 	}
@@ -281,7 +279,7 @@ func TestObjectLifecycle_Streaming(t *testing.T) {
 		t.Fatalf("Size after update mismatch: got=%d want=%d", updatedObj.Size, len(updatedData))
 	}
 
-	gotUpdated, err := updatedObj.GetData()
+	gotUpdated, err := updatedObj.GetData(0, 0)
 	if err != nil {
 		t.Fatalf("GetData() after update error: %v", err)
 	}

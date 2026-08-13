@@ -15,6 +15,10 @@ type Config struct {
 	StorageClass     string `envconfig:"STORAGE_CLASS" default:"STANDARD_SHARDS3"`
 	EnableDashboard  bool   `envconfig:"ENABLE_DASHBOARD" default:"true"`
 
+	// Path to the YAML file describing configured storage backends
+	// (non-secret settings only; secrets are always read from env vars).
+	BackendsConfigPath string `envconfig:"BACKENDS_CONFIG_PATH" default:"backends.yaml"`
+
 	// S3 Auth
 	S3AccountID       string `envconfig:"S3_ACCOUNT_ID" default:"0"`
 	S3Region          string `envconfig:"S3_REGION" default:"us-east-1"`
@@ -45,7 +49,7 @@ type Config struct {
 	EncryptionMethod string `envconfig:"ENCRYPTION_METHOD" default:"AES-256-GCM"` // AES-256-GCM, ChaCha20-Poly1305
 
 	// Failure Tolerance
-	FailureTolerance int `envconfig:"FAILURE_TOLERANCE" default:"2"` // Number of backends that can fail without losing data. Must be less than the number of backends.
+	FailureTolerance int `envconfig:"FAILURE_TOLERANCE" default:"0"` // Number of backends that can fail without losing data. Must be less than the number of backends.
 }
 
 var Cfg Config

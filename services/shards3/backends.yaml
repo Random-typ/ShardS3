@@ -1,0 +1,32 @@
+# Storage backend inventory for ShardS3.
+#
+# Only non-secret settings live here. Every backend's secrets are read from
+# environment variables named SHARDS3_BACKEND_<ID>_<KEY> (id and key are
+# upper-cased), never from this file. The required secret keys for each kind
+# are noted next to it below.
+#
+# id       unique name for this backend instance, used in shard metadata.
+# kind     driver implementation to use, must be a registered Kind.
+# enabled  disabled backends are skipped entirely (their secrets are not
+#          looked up), so incomplete/unused entries don't block startup.
+# settings kind-specific, non-secret configuration.
+
+backends:
+#  - id: telegram
+#    kind: telegram
+#    enabled: true
+#    settings:
+#      chat_id: "" # required secret: SHARDS3_BACKEND_TELEGRAM_BOT_TOKEN
+#
+#  - id: discord
+#    kind: discord
+#    enabled: true
+#    settings:
+#      channel_id: "" # required secret: SHARDS3_BACKEND_DISCORD_BOT_TOKEN
+
+  - id: file
+    kind: file
+    enabled: true
+    settings:
+      storage_dir: ./testdata # no secrets required
+

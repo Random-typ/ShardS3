@@ -6,7 +6,11 @@ import (
 )
 
 func allBackends() []BackendType {
-	return []BackendType{Telegram, Discord}
+	telegramID := BackendType("telegram")
+	discordID := BackendType("discord")
+	RegisterInstance(telegramID, &TelegramService{})
+	RegisterInstance(discordID, &DiscordService{})
+	return []BackendType{telegramID, discordID}
 }
 
 func assertEquivalentErrors(t *testing.T, got error, want error) {
@@ -24,7 +28,7 @@ func assertEquivalentErrors(t *testing.T, got error, want error) {
 func TestGetService_SupportedBackends(t *testing.T) {
 	for _, backend := range allBackends() {
 		backend := backend
-		t.Run(backend.String(), func(t *testing.T) {
+		t.Run(string(backend), func(t *testing.T) {
 			svc, err := getService(backend)
 			if err != nil {
 				t.Fatalf("getService(%v) error = %v", backend, err)
@@ -37,7 +41,7 @@ func TestGetService_SupportedBackends(t *testing.T) {
 }
 
 func TestGetService_UnsupportedBackend(t *testing.T) {
-	_, err := getService(BackendType(999))
+	_, err := getService(BackendType("nonexistent"))
 	if err == nil {
 		t.Fatal("getService() error = nil, want unsupported backend error")
 	}
@@ -46,7 +50,7 @@ func TestGetService_UnsupportedBackend(t *testing.T) {
 func TestGetMaxShardSize_DelegatesToBackendService(t *testing.T) {
 	for _, backend := range allBackends() {
 		backend := backend
-		t.Run(backend.String(), func(t *testing.T) {
+		t.Run(string(backend), func(t *testing.T) {
 			svc, err := getService(backend)
 			if err != nil {
 				t.Fatalf("getService(%v) error = %v", backend, err)
@@ -69,7 +73,7 @@ func TestGetShard_DelegatesToBackendService(t *testing.T) {
 
 	for _, backend := range allBackends() {
 		backend := backend
-		t.Run(backend.String(), func(t *testing.T) {
+		t.Run(string(backend), func(t *testing.T) {
 			svc, err := getService(backend)
 			if err != nil {
 				t.Fatalf("getService(%v) error = %v", backend, err)
@@ -92,7 +96,7 @@ func TestPutShard_DelegatesToBackendService(t *testing.T) {
 
 	for _, backend := range allBackends() {
 		backend := backend
-		t.Run(backend.String(), func(t *testing.T) {
+		t.Run(string(backend), func(t *testing.T) {
 			svc, err := getService(backend)
 			if err != nil {
 				t.Fatalf("getService(%v) error = %v", backend, err)
@@ -114,7 +118,7 @@ func TestDeleteShard_DelegatesToBackendService(t *testing.T) {
 
 	for _, backend := range allBackends() {
 		backend := backend
-		t.Run(backend.String(), func(t *testing.T) {
+		t.Run(string(backend), func(t *testing.T) {
 			svc, err := getService(backend)
 			if err != nil {
 				t.Fatalf("getService(%v) error = %v", backend, err)
@@ -129,7 +133,7 @@ func TestDeleteShard_DelegatesToBackendService(t *testing.T) {
 }
 
 func TestWrapperFunctions_UnsupportedBackend(t *testing.T) {
-	invalidBackend := BackendType(999)
+	invalidBackend := BackendType("nonexistent")
 
 	if _, err := GetMaxShardSize(invalidBackend); err == nil {
 		t.Fatal("GetMaxShardSize() error = nil, want unsupported backend error")
@@ -154,7 +158,7 @@ func TestLifecycle(t *testing.T) {
 
 	for _, backend := range allBackends() {
 		backend := backend
-		t.Run(backend.String(), func(t *testing.T) {
+		t.Run(string(backend), func(t *testing.T) {
 			// Put
 			location, err := PutShard(backend, data)
 			if err != nil {
@@ -176,16 +180,5 @@ func TestLifecycle(t *testing.T) {
 				t.Fatalf("DeleteShard(%v) error = %v", backend, err)
 			}
 		})
-	}
-}
-
-func (b BackendType) String() string {
-	switch b {
-	case Telegram:
-		return "Telegram"
-	case Discord:
-		return "Discord"
-	default:
-		return "Unknown"
 	}
 }

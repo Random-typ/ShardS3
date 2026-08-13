@@ -1,4 +1,6 @@
 # ShardS3
+> Currently in Beta
+
 ShardS3 is a storage service built for backing up data via Amazon S3 API. It uses **multiple storage backends** to store objects.  
 Data is split among multiple backends **similar to RAID** using reed-solomon encoding. This allows for **faster up and downloads** and most importantly **adds redundancy** in case a backend fails or data gets deleted.
 

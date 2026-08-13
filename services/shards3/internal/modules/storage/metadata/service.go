@@ -3,6 +3,7 @@ package metadata
 import (
 	"errors"
 	"sync"
+	"time"
 
 	"shards3/services/shards3/internal/platform/db"
 )
@@ -35,4 +36,8 @@ func getDB() (*db.DB, error) {
 		return nil, errors.New("metadata: database not configured, call Configure first")
 	}
 	return defaultDB, nil
+}
+
+func GetCurrentTime() time.Time {
+	return time.Now().UTC()
 }

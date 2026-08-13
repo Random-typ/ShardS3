@@ -6,6 +6,7 @@ import (
 	"shards3/services/shards3/internal/modules/storage/encryption"
 	"shards3/services/shards3/internal/modules/storage/interfaces"
 	"shards3/services/shards3/internal/modules/storage/metadata"
+	"shards3/services/shards3/internal/platform/backendconfig"
 	"shards3/services/shards3/internal/platform/config"
 	"shards3/services/shards3/internal/platform/db"
 )
@@ -26,7 +27,18 @@ func main() {
 	}
 	metadata.Configure(database)
 
-	interfaces.SetAvailableBackends([]interfaces.BackendType{interfaces.File, interfaces.File2, interfaces.File3, interfaces.File4, interfaces.File5})
+	backendDefs, err := backendconfig.LoadBackends(config.Cfg.BackendsConfigPath)
+	if err != nil {
+		log.Fatalf("Failed to load backends config: %v", err)
+	}
+	backendIDs, err := backendconfig.BuildBackends(backendDefs)
+	if err != nil {
+		log.Fatalf("Failed to configure backends: %v", err)
+	}
+	if len(backendIDs) <= config.Cfg.FailureTolerance {
+		log.Fatalf("Not enough enabled backends: have %d, need more than FailureTolerance (%d)", len(backendIDs), config.Cfg.FailureTolerance)
+	}
+	interfaces.SetAvailableBackends(backendIDs)
 
 	if config.Cfg.EnableDashboard {
 		go runS3Service()

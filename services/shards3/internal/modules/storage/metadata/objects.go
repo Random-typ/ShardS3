@@ -179,3 +179,20 @@ func GetObject(location object.ObjectLocation) (object.Object, error) {
 		Chunks:       chunks,
 	}, nil
 }
+
+func ObjectExists(location object.ObjectLocation) (bool, error) {
+	database, err := getDB()
+	if err != nil {
+		return false, err
+	}
+
+	var exists bool
+	err = database.QueryRow(`
+		SELECT EXISTS(SELECT 1 FROM objects WHERE bucket = ? AND object_key = ?)`,
+		string(location.Bucket.Name), string(location.Key),
+	).Scan(&exists)
+	if err != nil {
+		return false, fmt.Errorf("check object exists: %w", err)
+	}
+	return exists, nil
+}

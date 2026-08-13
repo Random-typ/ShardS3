@@ -66,13 +66,7 @@ type lifecycleTestCase struct {
 }
 
 func generateSucceedingLifecycleTestCases(maxBackendCount int) []lifecycleTestCase {
-	healthy := []interfaces.BackendType{
-		interfaces.File,
-		interfaces.File2,
-		interfaces.File3,
-		interfaces.File4,
-		interfaces.File5,
-	}
+	healthy := interfaces.RegisterFileTestBackends(5)
 
 	if maxBackendCount > len(healthy) {
 		maxBackendCount = len(healthy)
@@ -98,13 +92,14 @@ func TestLifecycle_FileBackendOnly(t *testing.T) {
 		t.Fatalf("failed to create test storage directory: %v", err)
 	}
 
-	shardSize, err := interfaces.GetMaxShardSize(interfaces.File)
+	testCases := generateSucceedingLifecycleTestCases(5)
+
+	shardSize, err := interfaces.GetMaxShardSize(testCases[0].backends[0])
 	if err != nil {
 		t.Fatalf("failed to get max shard size for file backend: %v", err)
 	}
 
 	payloadSizes := []int{shardSize / 2, shardSize, shardSize * 2}
-	testCases := generateSucceedingLifecycleTestCases(5)
 
 	for _, tc := range testCases {
 		config.Cfg.FailureTolerance = tc.failureTolerance

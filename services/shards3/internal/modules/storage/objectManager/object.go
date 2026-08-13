@@ -30,20 +30,22 @@ func PutObject(location object.ObjectLocation, data []byte) (object.Object, erro
 // memory - see chunker.ChunkStream for details.
 func PutObjectStream(location object.ObjectLocation, r io.Reader) (object.Object, error) {
 	encType, err := encryption.EncryptionTypeFromString(config.Cfg.EncryptionMethod)
+	compression := compression.Compression{Type: compression.Zstd, Level: config.Cfg.CompressionLevel}
 	if err != nil {
 		return object.Object{}, err
 	}
-	chunks, size, hash, err := chunker.ChunkStream(r, encType, interfaces.GetAvailableBackends(), config.Cfg.ChunkConcurrency)
+	chunks, size, hash, err := chunker.ChunkStream(r, encType, compression, interfaces.GetAvailableBackends(), config.Cfg.ChunkConcurrency)
 	if err != nil {
 		return object.Object{}, err
 	}
 
 	var obj = object.Object{
-		Location:    location,
-		Size:        size,
-		Compression: compression.Compression{Type: compression.Zstd, Level: config.Cfg.CompressionLevel},
-		ETag:        hash,
-		Chunks:      chunks,
+		Location:     location,
+		Size:         size,
+		Compression:  compression,
+		LastModified: metadata.GetCurrentTime(),
+		ETag:         hash,
+		Chunks:       chunks,
 	}
 
 	err = metadata.PutObject(obj)
@@ -74,10 +76,11 @@ func UpdateObject(location object.ObjectLocation, data []byte) (object.Object, e
 // the whole object in memory - see chunker.ChunkStream for details.
 func UpdateObjectStream(location object.ObjectLocation, r io.Reader) (object.Object, error) {
 	encType, err := encryption.EncryptionTypeFromString(config.Cfg.EncryptionMethod)
+	compression := compression.Compression{Type: compression.Zstd, Level: config.Cfg.CompressionLevel}
 	if err != nil {
 		return object.Object{}, err
 	}
-	chunks, size, hash, err := chunker.ChunkStream(r, encType, interfaces.GetAvailableBackends(), config.Cfg.ChunkConcurrency)
+	chunks, size, hash, err := chunker.ChunkStream(r, encType, compression, interfaces.GetAvailableBackends(), config.Cfg.ChunkConcurrency)
 	if err != nil {
 		return object.Object{}, err
 	}
@@ -85,7 +88,7 @@ func UpdateObjectStream(location object.ObjectLocation, r io.Reader) (object.Obj
 	var obj = object.Object{
 		Location:    location,
 		Size:        size,
-		Compression: compression.Compression{Type: compression.Zstd, Level: config.Cfg.CompressionLevel},
+		Compression: compression,
 		ETag:        hash,
 		Chunks:      chunks,
 	}

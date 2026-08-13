@@ -12,15 +12,14 @@ import (
 
 type ListAllMyBucketsResult struct {
 	XMLName xml.Name `xml:"ListAllMyBucketsResult"`
-	Xmlns   string   `xml:"xmlns,attr"`
 
 	Buckets           []Bucket `xml:"Buckets>Bucket,omitempty"`
-	Owner             Owner    `xml:"Owner,omitempty"`
+	Owner             User     `xml:"Owner,omitempty"`
 	ContinuationToken string   `xml:"ContinuationToken,omitempty"`
 	Prefix            string   `xml:"Prefix,omitempty"`
 }
 
-type Owner struct {
+type User struct {
 	ID          string `xml:"ID,omitempty"`
 	DisplayName string `xml:"DisplayName,omitempty"`
 }
@@ -37,7 +36,6 @@ type Bucket struct {
 type LocationConstraint struct {
 	XMLName xml.Name `xml:"LocationConstraint"`
 
-	Xmlns              string `xml:"xmlns,attr"`
 	LocationConstraint string `xml:"LocationConstraint,omitempty"`
 }
 
@@ -52,14 +50,12 @@ type Rule struct {
 
 type ServerSideEncryptionConfiguration struct {
 	XMLName xml.Name `xml:"ServerSideEncryptionConfiguration"`
-	Xmlns   string   `xml:"xmlns,attr"`
 	Rules   []Rule   `xml:"Rule,omitempty"`
 }
 
 type Grantee struct {
 	XMLName xml.Name `xml:"Grantee"`
 
-	Xmlns        string `xml:"xmlns,attr"`
 	DisplayName  string `xml:"DisplayName,omitempty"`
 	EmailAddress string `xml:"EmailAddress,omitempty"`
 	ID           string `xml:"ID,omitempty"`
@@ -70,7 +66,6 @@ type Grantee struct {
 type AccessControlList struct {
 	XMLName xml.Name `xml:"AccessControlList"`
 
-	Xmlns      string    `xml:"xmlns,attr"`
 	Grant      []Grantee `xml:"Grant>Grantee,omitempty"`
 	Permission string    `xml:"Permission,omitempty"`
 }
@@ -78,8 +73,7 @@ type AccessControlList struct {
 type AccessControlPolicy struct {
 	XMLName xml.Name `xml:"AccessControlPolicy"`
 
-	Xmlns             string              `xml:"xmlns,attr"`
-	Owner             Owner               `xml:"Owner,omitempty"`
+	Owner             User                `xml:"Owner,omitempty"`
 	AccessControlList []AccessControlList `xml:"AccessControlList>Grant,omitempty"`
 }
 
@@ -93,8 +87,20 @@ type Tag struct {
 type Tagging struct {
 	XMLName xml.Name `xml:"Tagging"`
 
-	Xmlns  string `xml:"xmlns,attr"`
-	TagSet []Tag  `xml:"TagSet>Tag,omitempty"`
+	TagSet []Tag `xml:"TagSet>Tag,omitempty"`
+}
+
+type BucketRequest struct {
+	BucketName string `http:"Bucket,host" name:"bucket name"`
+
+	Prefix            string `http:"prefix,query"`
+	MaxBuckets        int    `http:"max-buckets,query" range:"1,10000"`
+	ContinuationToken int    `http:"continuation-token,query" default:"1"`
+}
+
+type BucketResponse struct {
+	BucketArn    string `http:"x-amz-bucket-arn" name:"bucket arn"`
+	BucketRegion string `http:"x-amz-bucket-region" name:"bucket region"`
 }
 
 func urlEncode(s string) string {
@@ -102,20 +108,18 @@ func urlEncode(s string) string {
 }
 
 func (s *Server) GetBucketLocation(w http.ResponseWriter, r *http.Request) {
-	bucketName, ok := bucketFromHost(r.Host, config.Cfg.FQDN)
-	if !ok {
-		writeS3Error(w, http.StatusBadRequest, "InvalidBucketName", "bucket name not found in host", r.URL.Path)
+	req := HandleRequest[BucketRequest](w, r, true, false, nil, nil)
+	if req == nil {
 		return
 	}
 
-	_, err := s.bucketService.GetBucket(bucketName)
+	_, err := s.bucketService.GetBucket(req.BucketName)
 	if err != nil {
 		writeS3Error(w, http.StatusNotFound, "NoSuchBucket", "bucket not found", r.URL.Path)
 		return
 	}
 
 	response := LocationConstraint{
-		Xmlns:              "http://s3.amazonaws.com/doc/2006-03-01/",
 		LocationConstraint: config.Cfg.S3Region,
 	}
 
@@ -132,42 +136,39 @@ func (s *Server) GetBucketLocation(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) HeadBucket(w http.ResponseWriter, r *http.Request) {
-	bucketName, ok := bucketFromHost(r.Host, config.Cfg.FQDN)
-	if !ok {
-		writeS3Error(w, http.StatusBadRequest, "InvalidBucketName", "bucket name not found in host", r.URL.Path)
+	req := HandleRequest[BucketRequest](w, r, true, false, nil, nil)
+	if req == nil {
 		return
 	}
 
-	_, err := s.bucketService.GetBucket(bucketName)
+	_, err := s.bucketService.GetBucket(req.BucketName)
 	if err != nil {
 		writeS3Error(w, http.StatusNotFound, "NoSuchBucket", "bucket not found", r.URL.Path)
 		return
 	}
-	w.WriteHeader(http.StatusOK)
-	w.Header().Set("x-amz-bucket-arn", ARN.GetBucketArn(bucketName))
-	w.Header().Set("x-amz-bucket-region", config.Cfg.S3Region)
+	res := BucketResponse{
+		BucketArn:    ARN.GetBucketArn(req.BucketName),
+		BucketRegion: config.Cfg.S3Region,
+	}
+
+	WriteResponse(w, http.StatusOK, &res, nil, nil)
 }
 
 func (s *Server) ListBuckets(w http.ResponseWriter, r *http.Request) {
-	continuationToken, _ := strconv.Atoi(r.URL.Query().Get("continuation-token"))
-	prefix := r.URL.Query().Get("prefix")
-	maxBuckets, _ := strconv.Atoi(r.URL.Query().Get("max-buckets"))
-	if continuationToken <= 0 {
-		continuationToken = 1
-	}
-	if maxBuckets <= 0 || maxBuckets > 10000 {
-		maxBuckets = 10000
+	req := HandleRequest[BucketRequest](w, r, true, false, nil, nil)
+	if req == nil {
+		return
 	}
 
-	buckets, hasMore, err := s.bucketService.ListBuckets(prefix, continuationToken, maxBuckets)
+	buckets, hasMore, err := s.bucketService.ListBuckets(req.Prefix, req.ContinuationToken, req.MaxBuckets)
 	if err != nil {
 		writeS3Error(w, http.StatusInternalServerError, "InternalError", err.Error(), r.URL.Path)
 		return
 	}
 	if hasMore {
-		continuationToken++
+		req.ContinuationToken++
 	} else {
-		continuationToken = 0
+		req.ContinuationToken = 0
 	}
 
 	items := make([]Bucket, 0, len(buckets))
@@ -180,45 +181,30 @@ func (s *Server) ListBuckets(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response := ListAllMyBucketsResult{
-		Xmlns: "http://s3.amazonaws.com/doc/2006-03-01/",
-		Owner: Owner{
-			ID:          config.Cfg.S3AccountID,
-			DisplayName: config.Cfg.ServiceName,
-		},
+		Owner:   GetDefaultUser(),
 		Buckets: items,
-		Prefix:  prefix,
+		Prefix:  req.Prefix,
 	}
 
-	if continuationToken != 0 {
-		response.ContinuationToken = strconv.Itoa(continuationToken)
+	if req.ContinuationToken != 0 {
+		response.ContinuationToken = strconv.Itoa(req.ContinuationToken)
 	}
 
-	payload, err := xml.MarshalIndent(response, "", "  ")
-	if err != nil {
-		writeS3Error(w, http.StatusInternalServerError, "InternalError", "failed to encode response", r.URL.Path)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/xml")
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte(xml.Header))
-	_, _ = w.Write(payload)
+	WriteResponse(w, http.StatusOK, nil, response, nil)
 }
 
 func (s *Server) GetBucketEncryption(w http.ResponseWriter, r *http.Request) {
-	bucketName, ok := bucketFromHost(r.Host, config.Cfg.FQDN)
-	if !ok {
-		writeS3Error(w, http.StatusBadRequest, "InvalidBucketName", "bucket name not found in host", r.URL.Path)
+	req := HandleRequest[BucketRequest](w, r, true, false, nil, nil)
+	if req == nil {
 		return
 	}
 
-	_, err := s.bucketService.GetBucket(bucketName)
+	_, err := s.bucketService.GetBucket(req.BucketName)
 	if err != nil {
 		writeS3Error(w, http.StatusNotFound, "NoSuchBucket", "bucket not found", r.URL.Path)
 		return
 	}
-	encryption := ServerSideEncryptionConfiguration{
-		Xmlns: "http://s3.amazonaws.com/doc/2006-03-01/",
+	response := ServerSideEncryptionConfiguration{
 		Rules: []Rule{
 			{
 				SSEAlgorithm:     config.Cfg.EncryptionMethod,
@@ -227,43 +213,29 @@ func (s *Server) GetBucketEncryption(w http.ResponseWriter, r *http.Request) {
 		},
 	}
 
-	payload, err := xml.MarshalIndent(encryption, "", "  ")
-	if err != nil {
-		writeS3Error(w, http.StatusInternalServerError, "InternalError", "failed to encode response", r.URL.Path)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/xml")
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte(xml.Header))
-	_, _ = w.Write(payload)
+	WriteResponse(w, http.StatusOK, nil, response, nil)
 }
 
 func (s *Server) GetBucketAcl(w http.ResponseWriter, r *http.Request) {
-	bucketName, ok := bucketFromHost(r.Host, config.Cfg.FQDN)
-	if !ok {
-		writeS3Error(w, http.StatusBadRequest, "InvalidBucketName", "bucket name not found in host", r.URL.Path)
+	req := HandleRequest[BucketRequest](w, r, true, false, nil, nil)
+	if req == nil {
 		return
 	}
 
-	_, err := s.bucketService.GetBucket(bucketName)
+	_, err := s.bucketService.GetBucket(req.BucketName)
 	if err != nil {
 		writeS3Error(w, http.StatusNotFound, "NoSuchBucket", "bucket not found", r.URL.Path)
 		return
 	}
-	accessControlPolicy := AccessControlPolicy{
-		Xmlns: "http://s3.amazonaws.com/doc/2006-03-01/",
-		Owner: Owner{
-			ID:          config.Cfg.S3AccountID,
-			DisplayName: config.Cfg.ServiceName,
-		},
+	response := AccessControlPolicy{
+		Owner: GetDefaultUser(),
 		AccessControlList: []AccessControlList{
 			{
 				Grant: []Grantee{
 					{
 						Type:        "CanonicalUser",
-						ID:          config.Cfg.S3AccountID,
-						DisplayName: config.Cfg.ServiceName,
+						ID:          GetDefaultUser().ID,
+						DisplayName: GetDefaultUser().DisplayName,
 					},
 				},
 				Permission: "FULL_CONTROL",
@@ -271,44 +243,25 @@ func (s *Server) GetBucketAcl(w http.ResponseWriter, r *http.Request) {
 		},
 	}
 
-	payload, err := xml.MarshalIndent(accessControlPolicy, "", "  ")
-	if err != nil {
-		writeS3Error(w, http.StatusInternalServerError, "InternalError", "failed to encode response", r.URL.Path)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/xml")
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte(xml.Header))
-	_, _ = w.Write(payload)
+	WriteResponse(w, http.StatusOK, nil, response, nil)
 }
 
 func (s *Server) GetBucketTagging(w http.ResponseWriter, r *http.Request) {
-	bucketName, ok := bucketFromHost(r.Host, config.Cfg.FQDN)
-	if !ok {
-		writeS3Error(w, http.StatusBadRequest, "InvalidBucketName", "bucket name not found in host", r.URL.Path)
+	req := HandleRequest[BucketRequest](w, r, true, false, nil, nil)
+	if req == nil {
 		return
 	}
-	_, err := s.bucketService.GetBucket(bucketName)
+
+	_, err := s.bucketService.GetBucket(req.BucketName)
 	if err != nil {
 		writeS3Error(w, http.StatusNotFound, "NoSuchBucket", "bucket not found", r.URL.Path)
 		return
 	}
 	// Implement the logic to get bucket tagging here
 	// For now, return an empty Tagging response
-	tagging := Tagging{
-		Xmlns:  "http://s3.amazonaws.com/doc/2006-03-01/",
+	response := Tagging{
 		TagSet: []Tag{},
 	}
 
-	payload, err := xml.MarshalIndent(tagging, "", "  ")
-	if err != nil {
-		writeS3Error(w, http.StatusInternalServerError, "InternalError", "failed to encode response", r.URL.Path)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/xml")
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte(xml.Header))
-	_, _ = w.Write(payload)
+	WriteResponse(w, http.StatusOK, nil, response, nil)
 }

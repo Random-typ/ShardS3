@@ -81,25 +81,50 @@ CREATE TABLE IF NOT EXISTS objects (
 	FOREIGN KEY (bucket) REFERENCES buckets(name) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS multipart_uploads (
+	upload_id TEXT PRIMARY KEY,
+	bucket TEXT NOT NULL,
+	object_key TEXT NOT NULL,
+	compression_type INTEGER NOT NULL,
+	compression_level INTEGER NOT NULL,
+	initiated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+	FOREIGN KEY (bucket) REFERENCES buckets(name) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS multipart_parts (
+	upload_id TEXT NOT NULL,
+	part_number INTEGER NOT NULL,
+	ETag TEXT NOT NULL,
+	size INTEGER NOT NULL,
+	created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+	PRIMARY KEY (upload_id, part_number),
+	FOREIGN KEY (upload_id) REFERENCES multipart_uploads(upload_id) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS chunks (
 	id TEXT PRIMARY KEY,
 	bucket TEXT NOT NULL,
-	object_key TEXT NOT NULL,
+	object_key TEXT NULL,
+	upload_id TEXT NULL,
+	part_number INTEGER NULL,
 	ordinal INTEGER NOT NULL,
 	EncodingShardSize INTEGER NOT NULL,
 	EncodingDataShards INTEGER NOT NULL,
 	EncodingParityShards INTEGER NOT NULL DEFAULT 0,
 	encryption_type INTEGER NOT NULL,
-	key_id INTEGER NULL,
+	kms_key_id INTEGER NULL,
 	size INTEGER NOT NULL,
-	FOREIGN KEY (bucket, object_key) REFERENCES objects(bucket, object_key) ON DELETE CASCADE
+	FOREIGN KEY (bucket, object_key) REFERENCES objects(bucket, object_key) ON DELETE CASCADE,
+	FOREIGN KEY (upload_id, part_number) REFERENCES multipart_parts(upload_id, part_number) ON DELETE CASCADE,
+	FOREIGN KEY (kms_key_id) REFERENCES kms_keys(id),
+	CHECK ((object_key IS NULL) != (upload_id IS NULL))
 );
 
 CREATE TABLE IF NOT EXISTS shards (
 	chunk_id TEXT NOT NULL,
 	first INTEGER NOT NULL,
 	last INTEGER NOT NULL,
-	backend_type INTEGER NOT NULL,
+	backend_type TEXT NOT NULL,
 	location TEXT NOT NULL,
 	lastVerified DATETIME DEFAULT CURRENT_TIMESTAMP,
 	checksum INTEGER NOT NULL,
@@ -107,8 +132,16 @@ CREATE TABLE IF NOT EXISTS shards (
 	FOREIGN KEY (chunk_id) REFERENCES chunks(id) ON DELETE CASCADE
 );
 
+CREATE UNIQUE INDEX IF NOT EXISTS idx_chunks_object_ordinal
+	ON chunks(bucket, object_key, ordinal)
+	WHERE object_key IS NOT NULL;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_chunks_part_ordinal
+	ON chunks(upload_id, part_number, ordinal)
+	WHERE upload_id IS NOT NULL;
+
 -- Basic Migration Tracking
-INSERT OR IGNORE INTO schema_migrations (version) VALUES (1);
+INSERT OR IGNORE INTO schema_migrations (version) VALUES (3);
 `
 	_, err := db.Exec(schema)
 	return err

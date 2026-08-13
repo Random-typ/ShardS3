@@ -93,7 +93,7 @@ func assertShardFilesRemoved(t *testing.T, locations []string) {
 func TestChunkStream_RoundTrip(t *testing.T) {
 	setupTest(t)
 
-	interfaces.SetAvailableBackends([]interfaces.BackendType{interfaces.File, interfaces.File2, interfaces.File3})
+	interfaces.SetAvailableBackends(interfaces.RegisterFileTestBackends(3))
 	config.Cfg.FailureTolerance = 1
 	config.Cfg.ChunkSize = 64 * 1024
 
@@ -115,7 +115,7 @@ func TestChunkStream_RoundTrip(t *testing.T) {
 		t.Run(sc.name, func(t *testing.T) {
 			data := randomData(1, sc.size)
 
-			chunks, totalRead, _, err := ChunkStream(bytes.NewReader(data), encryption.AES_256_GCM, interfaces.GetAvailableBackends(), 4)
+			chunks, totalRead, _, err := ChunkStream(bytes.NewReader(data), encryption.AES_256_GCM, compression.Compression{Type: compression.Zstd, Level: 1}, interfaces.GetAvailableBackends(), 4)
 			if err != nil {
 				t.Fatalf("ChunkStream() error: %v", err)
 			}
@@ -150,7 +150,7 @@ func TestChunkStream_RoundTrip(t *testing.T) {
 func TestChunkStream_ConcurrencyOrdering(t *testing.T) {
 	setupTest(t)
 
-	interfaces.SetAvailableBackends([]interfaces.BackendType{interfaces.File, interfaces.File2})
+	interfaces.SetAvailableBackends(interfaces.RegisterFileTestBackends(2))
 	config.Cfg.FailureTolerance = 0
 	config.Cfg.ChunkSize = 32 * 1024
 
@@ -159,7 +159,7 @@ func TestChunkStream_ConcurrencyOrdering(t *testing.T) {
 
 	for _, concurrency := range []int{1, 2, 8} {
 		t.Run(fmt.Sprintf("Concurrency%d", concurrency), func(t *testing.T) {
-			chunks, totalRead, _, err := ChunkStream(bytes.NewReader(data), encryption.None, interfaces.GetAvailableBackends(), concurrency)
+			chunks, totalRead, _, err := ChunkStream(bytes.NewReader(data), encryption.None, compression.Compression{Type: compression.Zstd, Level: 1}, interfaces.GetAvailableBackends(), concurrency)
 			if err != nil {
 				t.Fatalf("ChunkStream() error: %v", err)
 			}
@@ -188,13 +188,13 @@ func TestChunkStream_ConcurrencyOrdering(t *testing.T) {
 func TestChunkStream_BackendFailurePropagatesError(t *testing.T) {
 	setupTest(t)
 
-	interfaces.SetAvailableBackends([]interfaces.BackendType{interfaces.File1Fail})
+	interfaces.SetAvailableBackends(interfaces.RegisterFileTestBackends(1, 0))
 	config.Cfg.FailureTolerance = 0
 	config.Cfg.ChunkSize = 16 * 1024
 
 	data := randomData(5, config.Cfg.ChunkSize)
 
-	chunks, _, _, err := ChunkStream(bytes.NewReader(data), encryption.None, interfaces.GetAvailableBackends(), 2)
+	chunks, _, _, err := ChunkStream(bytes.NewReader(data), encryption.None, compression.Compression{Type: compression.Zstd, Level: 1}, interfaces.GetAvailableBackends(), 2)
 	if err == nil {
 		t.Fatal("expected an error from ChunkStream when the only backend fails")
 	}
@@ -230,7 +230,7 @@ func (r *errAfterReader) Read(p []byte) (int, error) {
 func TestChunkStream_ReaderErrorCleansUpCompletedChunks(t *testing.T) {
 	setupTest(t)
 
-	interfaces.SetAvailableBackends([]interfaces.BackendType{interfaces.File, interfaces.File2})
+	interfaces.SetAvailableBackends(interfaces.RegisterFileTestBackends(2))
 	config.Cfg.FailureTolerance = 0
 	config.Cfg.ChunkSize = 16 * 1024
 
@@ -242,7 +242,7 @@ func TestChunkStream_ReaderErrorCleansUpCompletedChunks(t *testing.T) {
 	// reading, so by the time the reader error is encountered all
 	// `goodChunks` chunks are guaranteed to have already completed and had
 	// their shards written to disk.
-	chunks, _, _, err := ChunkStream(reader, encryption.None, interfaces.GetAvailableBackends(), 1)
+	chunks, _, _, err := ChunkStream(reader, encryption.None, compression.Compression{Type: compression.Zstd, Level: 1}, interfaces.GetAvailableBackends(), 1)
 	if err == nil {
 		t.Fatal("expected an error from ChunkStream when the reader fails")
 	}

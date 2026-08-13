@@ -36,6 +36,12 @@ func setupTestDB(t *testing.T) {
 	})
 
 	Configure(database)
+
+	// sampleChunk() references a fixed kms_key_id of 7; back it with a real
+	// row so the chunks.kms_key_id foreign key is satisfied.
+	if _, err := database.Exec(`INSERT INTO kms_keys (id, key_ciphertext) VALUES (7, X'00')`); err != nil {
+		t.Fatalf("seed kms key: %v", err)
+	}
 }
 
 // sampleChunk builds a deterministic chunk with two shards, using ordinal to
@@ -48,8 +54,8 @@ func sampleChunk(ordinal int) chunker.Chunk {
 		EncodedDataShards: 2,
 		Encryption:        chunker.Encryption{Type: encryption.AES_256_GCM, KeyId: encryption.KeyID(7)},
 		Shards: []shard.Shard{
-			{First: 0, Last: 999, Backend: interfaces.File, Location: fmt.Sprintf("chunk-%d-shard-0", ordinal), Checksum: 111},
-			{First: 1000, Last: 1999, Backend: interfaces.File2, Location: fmt.Sprintf("chunk-%d-shard-1", ordinal), Checksum: 222},
+			{First: 0, Last: 999, Backend: interfaces.BackendType("file"), Location: fmt.Sprintf("chunk-%d-shard-0", ordinal), Checksum: 111},
+			{First: 1000, Last: 1999, Backend: interfaces.BackendType("file2"), Location: fmt.Sprintf("chunk-%d-shard-1", ordinal), Checksum: 222},
 		},
 	}
 }
@@ -220,6 +226,61 @@ func TestBucketLifecycle(t *testing.T) {
 
 	if err := DeleteBucket(bucket); err == nil {
 		t.Fatal("expected error deleting an already-deleted bucket")
+	}
+}
+
+func TestListBackendStats(t *testing.T) {
+	setupTestDB(t)
+
+	bucket := object.Bucket{Name: "backend-stats-bucket"}
+	if err := CreateBucket(bucket); err != nil {
+		t.Fatalf("CreateBucket() error: %v", err)
+	}
+
+	obj := object.Object{
+		Location:    object.ObjectLocation{Bucket: bucket, Key: "obj.bin"},
+		Size:        4000,
+		Compression: compression.Compression{Type: compression.None, Level: 0},
+		Chunks:      []chunker.Chunk{sampleChunk(0), sampleChunk(1)},
+	}
+	if err := PutObject(obj); err != nil {
+		t.Fatalf("PutObject() error: %v", err)
+	}
+
+	stats, err := ListBackendStats()
+	if err != nil {
+		t.Fatalf("ListBackendStats() error: %v", err)
+	}
+
+	if len(stats) != 2 {
+		t.Fatalf("expected 2 backend stats entries, got %d", len(stats))
+	}
+
+	byBackend := map[string]object.BackendStats{}
+	for _, stat := range stats {
+		byBackend[stat.Backend] = stat
+	}
+
+	fileStat, ok := byBackend["file"]
+	if !ok {
+		t.Fatalf("missing file backend stats: %+v", stats)
+	}
+	if fileStat.TotalShards != 2 || fileStat.TotalBytes != 2000 || fileStat.TotalChunks != 2 || fileStat.TotalObjects != 1 || fileStat.TotalBuckets != 1 {
+		t.Fatalf("unexpected file backend stats: %+v", fileStat)
+	}
+	if fileStat.LastVerified.IsZero() {
+		t.Fatalf("expected file backend LastVerified to be set")
+	}
+
+	file2Stat, ok := byBackend["file2"]
+	if !ok {
+		t.Fatalf("missing file2 backend stats: %+v", stats)
+	}
+	if file2Stat.TotalShards != 2 || file2Stat.TotalBytes != 2000 || file2Stat.TotalChunks != 2 || file2Stat.TotalObjects != 1 || file2Stat.TotalBuckets != 1 {
+		t.Fatalf("unexpected file2 backend stats: %+v", file2Stat)
+	}
+	if file2Stat.LastVerified.IsZero() {
+		t.Fatalf("expected file2 backend LastVerified to be set")
 	}
 }
 

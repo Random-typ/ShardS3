@@ -25,9 +25,10 @@ type Server struct {
 }
 
 type pageView struct {
-	Title   string
-	Content template.HTML
-	Buckets []dashboard.Bucket
+	Title        string
+	Content      template.HTML
+	Buckets      []dashboard.Bucket
+	BackendStats []dashboard.BackendStats
 }
 
 type objectBrowserView struct {
@@ -48,7 +49,9 @@ type healthView struct {
 
 func NewServer(service *dashboard.Service) (*Server, error) {
 	templates, err := template.New("dashboard").Funcs(template.FuncMap{
-		"formatBytes": formatBytes,
+		"formatBytes":    formatBytes,
+		"formatBytesInt": formatBytesInt,
+		"formatTime":     formatTime,
 	}).ParseFS(assetsFS, "templates/*.gohtml")
 	if err != nil {
 		return nil, fmt.Errorf("parse templates: %w", err)
@@ -89,7 +92,12 @@ func (s *Server) bucketsPage(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) backendsPage(w http.ResponseWriter, r *http.Request) {
-	s.renderPage(w, "backends_content", pageView{Title: "Backends - ShardS3"})
+	stats, err := s.service.ListBackendStats()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	s.renderPage(w, "backends_content", pageView{Title: "Backends - ShardS3", BackendStats: stats})
 }
 
 func (s *Server) settingsPage(w http.ResponseWriter, r *http.Request) {
@@ -252,6 +260,10 @@ func formatBytes(bytes int64) string {
 	return fmt.Sprintf("%.1f %s", value, units[exp])
 }
 
+func formatBytesInt(bytes int) string {
+	return formatBytes(int64(bytes))
+}
+
 func parentPrefix(prefix string) string {
 	prefix = strings.TrimSpace(prefix)
 	prefix = strings.TrimSuffix(prefix, "/")
@@ -265,4 +277,11 @@ func parentPrefix(prefix string) string {
 	}
 
 	return prefix[:idx+1]
+}
+
+func formatTime(value time.Time) string {
+	if value.IsZero() {
+		return "-"
+	}
+	return value.UTC().Format("2006-01-02 15:04:05 UTC")
 }

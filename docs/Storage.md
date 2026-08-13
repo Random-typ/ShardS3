@@ -7,7 +7,10 @@ before data is lost.
 
 ## Shards
 
-## Backends 
+## Backends
+Backend instances are declared in `backends.yaml` (path configurable via `SHARDS3_BACKENDS_CONFIG_PATH`): each entry has an `id`, a driver `kind` (e.g. `telegram`, `discord`, `file`), whether it's `enabled`, and kind-specific non-secret `settings`. Secrets (bot tokens, API keys, etc.) are never stored in YAML - they are read from environment variables named `SHARDS3_BACKEND_<ID>_<KEY>` (id and key upper-cased), so a backend's non-secret configuration and its secrets are managed separately. Disabled backends are skipped entirely at startup, including their secret lookups.
+
+New backend kinds register themselves with the storage layer via an `init()` call (`interfaces.RegisterKind`); adding one does not require touching existing backend code.
 
 ## Metadata
 Metadata is stored in a simple SQLite Database (./filepath). The metadata contains information  
