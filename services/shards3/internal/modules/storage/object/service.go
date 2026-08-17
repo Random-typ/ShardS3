@@ -1,6 +1,8 @@
 package object
 
 import (
+	"fmt"
+	"io"
 	"shards3/services/shards3/internal/modules/storage/chunker"
 	"shards3/services/shards3/internal/modules/storage/compression"
 	"time"
@@ -65,52 +67,87 @@ type MultipartPart struct {
 	Chunks []chunker.Chunk
 }
 
-// returns the first and last chunk indices that contain the requested range,
-// as well as the offset within the first chunk and the length of the range to read from the last chunk.
-func getChunkOffset(chunks []chunker.Chunk, begin int64, end int64) (int, int, int64, int64) {
-	firstChunk := 0
-	for _, chunk := range chunks {
-		if begin >= chunk.Size {
-			firstChunk++
-			begin -= chunk.Size
-			continue
-		}
-		break
+func normalizeRange(total int64, begin int64, end int64) (int64, int64, error) {
+	if begin < 0 {
+		return 0, 0, fmt.Errorf("invalid range: begin must be >= 0")
 	}
-	lastChunk := len(chunks)
-	for _, chunk := range chunks {
-		if end > chunk.Size {
-			lastChunk--
-			end -= chunk.Size
-			continue
-		}
-		break
+	if begin > total {
+		return 0, 0, fmt.Errorf("invalid range: begin exceeds object size")
 	}
-	return firstChunk, lastChunk, begin, end
+
+	if end == 0 {
+		end = total
+	}
+
+	if end < begin || end > total {
+		return 0, 0, fmt.Errorf("invalid range: end out of bounds")
+	}
+
+	return begin, end, nil
+}
+
+func streamRangeFromChunks(chunks []chunker.Chunk, compressionMetadata compression.Compression, totalSize int64, begin int64, end int64) (io.ReadCloser, error) {
+	begin, end, err := normalizeRange(totalSize, begin, end)
+	if err != nil {
+		return nil, err
+	}
+
+	base := chunker.CollectChunksStream(chunks, compressionMetadata)
+	length := end - begin
+
+	pr, pw := io.Pipe()
+	go func() {
+		defer base.Close()
+		defer pw.Close()
+
+		if begin > 0 {
+			if _, err := io.CopyN(io.Discard, base, begin); err != nil {
+				if err != io.EOF {
+					_ = pw.CloseWithError(err)
+				}
+				return
+			}
+		}
+
+		if length == 0 {
+			return
+		}
+
+		if _, err := io.CopyN(pw, base, length); err != nil {
+			if err != io.EOF {
+				_ = pw.CloseWithError(err)
+			}
+			return
+		}
+	}()
+
+	return pr, nil
 }
 
 func (o *Object) GetData(begin int64, end int64) ([]byte, error) {
-	firstChunk, lastChunk, begin, end := getChunkOffset(o.Chunks, begin, end)
-
-	data, err := chunker.CollectChunks(o.Chunks[firstChunk:lastChunk], o.Compression)
+	r, err := o.GetDataStream(begin, end)
 	if err != nil {
 		return nil, err
 	}
-	if end == 0 {
-		end = int64(len(data))
-	}
-	return data[begin:end], nil
+	defer r.Close()
+
+	return io.ReadAll(r)
 }
 
 func (o *MultipartUpload) GetData(part MultipartPart, begin int64, end int64) ([]byte, error) {
-	firstChunk, lastChunk, begin, end := getChunkOffset(part.Chunks, begin, end)
-
-	data, err := chunker.CollectChunks(part.Chunks[firstChunk:lastChunk], o.Compression)
+	r, err := o.GetDataStream(part, begin, end)
 	if err != nil {
 		return nil, err
 	}
-	if end == 0 {
-		end = int64(len(data))
-	}
-	return data[begin:end], nil
+	defer r.Close()
+
+	return io.ReadAll(r)
+}
+
+func (o *Object) GetDataStream(begin int64, end int64) (io.ReadCloser, error) {
+	return streamRangeFromChunks(o.Chunks, o.Compression, o.Size, begin, end)
+}
+
+func (o *MultipartUpload) GetDataStream(part MultipartPart, begin int64, end int64) (io.ReadCloser, error) {
+	return streamRangeFromChunks(part.Chunks, o.Compression, part.Size, begin, end)
 }

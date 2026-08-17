@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"sync"
 
 	"shards3/services/shards3/internal/modules/storage/compression"
@@ -60,7 +59,6 @@ func ChunkStream(r io.Reader, encryptionMethod encryption.EncryptionType, compre
 	if concurrency < 1 {
 		concurrency = 1
 	}
-	log.Printf("trace chunk_stream start concurrency=%d chunk_size=%d backend_count=%d encryption=%d", concurrency, config.Cfg.ChunkSize, len(backends), int(encryptionMethod))
 
 	g, ctx := errgroup.WithContext(context.Background())
 	g.SetLimit(concurrency)
@@ -86,21 +84,17 @@ func ChunkStream(r io.Reader, encryptionMethod encryption.EncryptionType, compre
 			totalRead += int64(n)
 			chunkOrdinal := ordinal
 			ordinal++
-			log.Printf("trace chunk_stream read chunk=%d bytes=%d total_read=%d", chunkOrdinal, n, totalRead)
 
 			digest.Write(buf)
 
 			g.Go(func() error {
-				log.Printf("trace chunk_stream process_begin chunk=%d", chunkOrdinal)
 				chunk, err := processChunk(buf, encryptionMethod, compression, backends)
 				if err != nil {
-					log.Printf("trace chunk_stream process_failed chunk=%d err=%v", chunkOrdinal, err)
 					return fmt.Errorf("process chunk %d: %w", chunkOrdinal, err)
 				}
 				mu.Lock()
 				completed[chunkOrdinal] = chunk
 				mu.Unlock()
-				log.Printf("trace chunk_stream process_done chunk=%d shard_count=%d", chunkOrdinal, len(chunk.Shards))
 				return nil
 			})
 		}
@@ -116,12 +110,10 @@ func ChunkStream(r io.Reader, encryptionMethod encryption.EncryptionType, compre
 	}
 
 	if err := g.Wait(); err != nil {
-		log.Printf("trace chunk_stream wait_failed err=%v", err)
 		cleanupChunks(completed)
 		return nil, 0, 0, err
 	}
 	if readErr != nil {
-		log.Printf("trace chunk_stream read_failed err=%v", readErr)
 		cleanupChunks(completed)
 		return nil, 0, 0, readErr
 	}
@@ -132,7 +124,6 @@ func ChunkStream(r io.Reader, encryptionMethod encryption.EncryptionType, compre
 	}
 
 	hash := digest.Sum64()
-	log.Printf("trace chunk_stream done chunks=%d total_read=%d hash=%d", len(chunks), totalRead, hash)
 	return chunks, totalRead, hash, nil
 }
 
@@ -223,6 +214,57 @@ func CollectChunks(chunks []Chunk, compressionMetadata compression.Compression) 
 	}
 
 	return data, nil
+}
+
+// CollectChunksStream reconstructs chunks and streams their decompressed bytes
+// in order through a reader, avoiding full-object buffering.
+func CollectChunksStream(chunks []Chunk, compressionMetadata compression.Compression) io.ReadCloser {
+	pr, pw := io.Pipe()
+
+	go func() {
+		defer pw.Close()
+
+		for _, chunk := range chunks {
+			// Collect the shards and reconstruct the encrypted chunk.
+			encryptedData, err := shard.CollectShards(chunk.Shards, chunk.EncodedShardSize, chunk.EncodedDataShards, chunk.EncodedParityShards)
+			if err != nil {
+				_ = pw.CloseWithError(err)
+				return
+			}
+
+			// Reconstructed data is padded up to a multiple of EncodedShardSize;
+			// trim it back down to the exact encrypted chunk length before
+			// decrypting, otherwise the trailing padding breaks AEAD auth.
+			if int64(len(encryptedData)) > chunk.Size {
+				encryptedData = encryptedData[:chunk.Size]
+			}
+
+			// Decrypt the chunk.
+			decryptedData, err := encryption.Decrypt(encryptedData, encryption.Encryption{
+				Type:  chunk.Encryption.Type,
+				KeyId: chunk.Encryption.KeyId,
+			})
+			if err != nil {
+				_ = pw.CloseWithError(err)
+				return
+			}
+
+			// Each chunk was compressed independently, so it must be decompressed
+			// independently too.
+			decompressedChunk, err := compression.Decompress(decryptedData, compressionMetadata)
+			if err != nil {
+				_ = pw.CloseWithError(err)
+				return
+			}
+
+			if _, err := pw.Write(decompressedChunk); err != nil {
+				_ = pw.CloseWithError(err)
+				return
+			}
+		}
+	}()
+
+	return pr
 }
 
 func DeleteChunk(chunk Chunk) error {

@@ -84,10 +84,16 @@ type Tag struct {
 	Value string `xml:"Value,omitempty"`
 }
 
+type TagSet struct {
+	XMLName xml.Name `xml:"TagSet"`
+
+	Tags []Tag `xml:"Tag,omitempty"`
+}
+
 type Tagging struct {
 	XMLName xml.Name `xml:"Tagging"`
 
-	TagSet []Tag `xml:"TagSet>Tag,omitempty"`
+	TagSet TagSet `xml:"TagSet,omitempty"`
 }
 
 type BucketRequest struct {
@@ -252,16 +258,9 @@ func (s *Server) GetBucketTagging(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, err := s.bucketService.GetBucket(req.BucketName)
-	if err != nil {
-		writeS3Error(w, http.StatusNotFound, "NoSuchBucket", "bucket not found", r.URL.Path)
-		return
-	}
 	// Implement the logic to get bucket tagging here
 	// For now, return an empty Tagging response
-	response := Tagging{
-		TagSet: []Tag{},
-	}
+	response := Tagging{}
 
 	WriteResponse(w, http.StatusOK, nil, response, nil)
 }

@@ -2,7 +2,6 @@ package interfaces
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 
@@ -73,10 +72,8 @@ func (s *FileService) GetObject(location string) ([]byte, error) {
 		return nil, fmt.Errorf("simulated failure in GetObject")
 	}
 	filePath := filepath.Join(s.storageDirectory(), location)
-	log.Printf("trace file_backend get location=%s path=%s", location, filePath)
 	data, err := os.ReadFile(filePath)
 	if err != nil {
-		log.Printf("trace file_backend get_failed location=%s path=%s err=%v", location, filePath, err)
 		return nil, err
 	}
 	return data, nil
@@ -88,15 +85,12 @@ func (s *FileService) PutObject(data []byte) (string, error) {
 	}
 	storageDir := s.storageDirectory()
 	if err := os.MkdirAll(storageDir, 0o755); err != nil {
-		log.Printf("trace file_backend mkdir_failed dir=%s err=%v", storageDir, err)
 		return "", err
 	}
 	location := generateLocation() // You need to implement this function to generate a unique location for the shard.
 	filePath := filepath.Join(storageDir, location)
-	log.Printf("trace file_backend put location=%s path=%s bytes=%d", location, filePath, len(data))
 	err := os.WriteFile(filePath, data, 0644)
 	if err != nil {
-		log.Printf("trace file_backend put_failed location=%s path=%s err=%v", location, filePath, err)
 		return "", err
 	}
 	return location, nil
@@ -107,10 +101,6 @@ func (s *FileService) DeleteObject(location string) error {
 		return fmt.Errorf("simulated failure in DeleteObject")
 	}
 	filePath := filepath.Join(s.storageDirectory(), location)
-	log.Printf("trace file_backend delete location=%s path=%s", location, filePath)
 	err := os.Remove(filePath)
-	if err != nil {
-		log.Printf("trace file_backend delete_failed location=%s path=%s err=%v", location, filePath, err)
-	}
 	return err
 }

@@ -43,7 +43,7 @@ func ListObjects(bucket object.Bucket, prefix string, delim string, startAfter s
 	}
 
 	rows, err := database.Query(`
-		SELECT object_key, size, compression_type, compression_level, created_at
+		SELECT object_key, ETAG, size, compression_type, compression_level, created_at
 		FROM objects WHERE bucket = ? AND object_key LIKE ? AND object_key > ? ORDER BY object_key ASC LIMIT ? OFFSET ?`,
 		string(bucket.Name), string(prefix)+"%", startAfter, max+1, (page-1)*max,
 	)
@@ -56,15 +56,23 @@ func ListObjects(bucket object.Bucket, prefix string, delim string, startAfter s
 	for rows.Next() {
 		var key string
 		var size int64
+		var eTag string
 		var compType int
 		var compLevel int
 		var created time.Time
-		if err := rows.Scan(&key, &size, &compType, &compLevel, &created); err != nil {
+		if err := rows.Scan(&key, &eTag, &size, &compType, &compLevel, &created); err != nil {
 			return nil, false, err
+		}
+
+		etagUint, err := strconv.ParseUint(eTag, 10, 64)
+
+		if err != nil {
+			return nil, false, fmt.Errorf("parse ETag: %w", err)
 		}
 
 		objects = append(objects, object.Object{
 			Location:     object.ObjectLocation{Bucket: bucket, Key: key},
+			ETag:         etagUint,
 			Size:         size,
 			Compression:  compression.Compression{Type: compression.CompressionType(compType), Level: compLevel},
 			LastModified: created,

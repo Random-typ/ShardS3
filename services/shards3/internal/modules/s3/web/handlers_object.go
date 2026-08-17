@@ -4,6 +4,7 @@ import (
 	"encoding/xml"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"shards3/services/shards3/internal/modules/storage/metadata"
 	"shards3/services/shards3/internal/modules/storage/object"
@@ -19,20 +20,17 @@ type ListBucketResult struct {
 
 	Contents []Contents `xml:"Contents,omitempty"`
 
-	Name                  string         `xml:"Name,omitempty"`
-	Prefix                string         `xml:"Prefix,omitempty"`
-	Delimiter             string         `xml:"Delimiter,omitempty"`
-	MaxKeys               int            `xml:"MaxKeys,omitempty"`
-	CommonPrefixes        []CommonPrefix `xml:"CommonPrefixes,omitempty"`
-	EncodingType          string         `xml:"EncodingType,omitempty"`
-	KeyCount              int            `xml:"KeyCount,omitempty"`
-	ContinuationToken     int            `xml:"ContinuationToken,omitempty"`
-	NextContinuationToken int            `xml:"NextContinuationToken,omitempty"`
-	StartAfter            string         `xml:"StartAfter,omitempty"`
-}
+	Name           string   `xml:"Name,omitempty"`
+	Prefix         string   `xml:"Prefix,omitempty"`
+	Delimiter      string   `xml:"Delimiter,omitempty"`
+	MaxKeys        int      `xml:"MaxKeys,omitempty"`
+	CommonPrefixes []string `xml:"CommonPrefixes>Prefix,omitempty"`
 
-type CommonPrefix struct {
-	Prefix string `xml:"Prefix,omitempty"`
+	EncodingType          string `xml:"EncodingType,omitempty"`
+	KeyCount              int    `xml:"KeyCount,omitempty"`
+	ContinuationToken     int    `xml:"ContinuationToken,omitempty"`
+	NextContinuationToken int    `xml:"NextContinuationToken,omitempty"`
+	StartAfter            string `xml:"StartAfter,omitempty"`
 }
 
 type Contents struct {
@@ -102,7 +100,7 @@ type ObjectRequest struct {
 	FetchOwner         string    `http:"fetch-owner,query"`
 	StartAfter         string    `http:"start-after,query"`
 	EncodingType       string    `http:"encoding-type,query"`
-	MaxKeys            int       `http:"max-keys,query" range:"1,1000"`
+	MaxKeys            int       `http:"max-keys,query" range:"1,1000" default:"1000"`
 
 	IfMatch           string `http:"If-Match,header"`
 	IfModifiedSince   string `http:"If-Modified-Since,header"`
@@ -129,6 +127,15 @@ type ObjectResponse struct {
 	StorageClass       string    `http:"x-amz-storage-class"`
 	ObjectSize         int64     `http:"x-amz-object-size"`
 	Expires            time.Time `http:"Expires"`
+}
+
+// Returns the object location.
+// Does not validate the bucket name or key, just returns them as-is.
+func (s *ObjectRequest) GetObjectLocation() object.ObjectLocation {
+	return object.ObjectLocation{
+		Bucket: object.Bucket{Name: s.BucketName},
+		Key:    s.Key,
+	}
 }
 
 // Checks wether the If-Match header matches the object's ETag. If it does, returns false, otherwise true.
@@ -290,10 +297,7 @@ func (s *Server) HeadObject(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if req.PartNumber != 0 {
-		_, err := metadata.GetMultipartUploadByLocation(object.ObjectLocation{
-			Bucket: object.Bucket{Name: req.BucketName},
-			Key:    r.URL.Path,
-		})
+		_, err := metadata.GetMultipartUploadByLocation(req.GetObjectLocation())
 		if err != nil {
 			writeS3Error(w, http.StatusInternalServerError, "InternalError", err.Error(), req.BucketName)
 			return
@@ -301,10 +305,7 @@ func (s *Server) HeadObject(w http.ResponseWriter, r *http.Request) {
 
 	}
 
-	object, err := metadata.GetObject(object.ObjectLocation{
-		Bucket: object.Bucket{Name: req.BucketName},
-		Key:    r.URL.Path,
-	})
+	object, err := metadata.GetObject(req.GetObjectLocation())
 	if err != nil {
 		writeS3Error(w, http.StatusInternalServerError, "InternalError", err.Error(), req.BucketName)
 		return
@@ -317,7 +318,7 @@ func (s *Server) HeadObject(w http.ResponseWriter, r *http.Request) {
 	var start int64 = 0
 	var end int64 = object.Size
 	if req.Range != "" {
-		start, end, _, err := ParseContentRangeHeader(req.Range)
+		start, end, _, err = ParseContentRangeHeader(req.Range)
 		if err != nil {
 			writeS3Error(w, http.StatusRequestedRangeNotSatisfiable, "InvalidRange", err.Error(), object.Location.Key)
 			return
@@ -346,10 +347,7 @@ func (s *Server) PutObject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	object, err := objectManager.PutObjectStream(object.ObjectLocation{
-		Bucket: object.Bucket{Name: req.BucketName},
-		Key:    r.URL.Path,
-	}, r.Body)
+	object, err := objectManager.PutObjectStream(req.GetObjectLocation(), r.Body)
 	if err != nil {
 		writeS3Error(w, http.StatusInternalServerError, "InternalError", err.Error(), req.BucketName)
 		return
@@ -371,10 +369,7 @@ func (s *Server) GetObject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	obj, err := metadata.GetObject(object.ObjectLocation{
-		Bucket: object.Bucket{Name: req.BucketName},
-		Key:    r.URL.Path,
-	})
+	obj, err := metadata.GetObject(req.GetObjectLocation())
 	if err != nil {
 		writeS3Error(w, http.StatusInternalServerError, "InternalError", err.Error(), req.BucketName)
 		return
@@ -387,7 +382,7 @@ func (s *Server) GetObject(w http.ResponseWriter, r *http.Request) {
 	var start int64 = 0
 	var end int64 = 0
 	if req.Range != "" {
-		start, end, _, err := ParseContentRangeHeader(req.Range)
+		start, end, _, err = ParseContentRangeHeader(req.Range)
 		if err != nil {
 			writeS3Error(w, http.StatusRequestedRangeNotSatisfiable, "InvalidRange", err.Error(), req.BucketName)
 			return
@@ -405,15 +400,14 @@ func (s *Server) GetObject(w http.ResponseWriter, r *http.Request) {
 		ContentLanguage:    req.ContentLanguage,
 		CacheControl:       req.CacheControl,
 		Expires:            req.Expires,
-		ContentLength:      end - start,
+	}
+	if req.Range != "" {
+		headers.ContentLength = end - start
 	}
 
-	var data []byte
+	var dataStream io.ReadCloser
 	if req.PartNumber != 0 {
-		multipartUpload, err := metadata.GetMultipartUploadByLocation(object.ObjectLocation{
-			Bucket: object.Bucket{Name: req.BucketName},
-			Key:    r.URL.Path,
-		})
+		multipartUpload, err := metadata.GetMultipartUploadByLocation(req.GetObjectLocation())
 		if err != nil {
 			writeS3Error(w, http.StatusInternalServerError, "InternalError", err.Error(), req.BucketName)
 			return
@@ -423,28 +417,43 @@ func (s *Server) GetObject(w http.ResponseWriter, r *http.Request) {
 			writeS3Error(w, http.StatusInternalServerError, "InternalError", err.Error(), req.BucketName)
 			return
 		}
-		data, err = multipartUpload.GetData(part, start, end)
+		if req.Range == "" {
+			headers.ContentLength = part.Size
+		}
+		dataStream, err = multipartUpload.GetDataStream(part, start, end)
 		if err != nil {
 			writeS3Error(w, http.StatusInternalServerError, "InternalError", err.Error(), req.BucketName)
 			return
 		}
 	} else {
-		data, err = obj.GetData(start, end)
+		if req.Range == "" {
+			headers.ContentLength = obj.Size
+		}
+		dataStream, err = obj.GetDataStream(start, end)
 		if err != nil {
 			writeS3Error(w, http.StatusInternalServerError, "InternalError", err.Error(), req.BucketName)
 			return
 		}
 	}
+	defer dataStream.Close()
 
 	if req.Range != "" {
 		headers.ContentRange = fmt.Sprintf("bytes %d-%d/%d", start, end-1, obj.Size)
 	}
 
-	WriteResponse(w, http.StatusOK, headers, nil, data)
+	statusCode := http.StatusOK
+	if req.Range != "" {
+		statusCode = http.StatusPartialContent
+	}
+
+	if err := WriteResponseStream(w, statusCode, headers, nil, dataStream); err != nil {
+		writeS3Error(w, http.StatusInternalServerError, "InternalError", err.Error(), req.BucketName)
+		return
+	}
 }
 
 func (s *Server) ListObjectsV2(w http.ResponseWriter, r *http.Request) {
-	req := HandleRequest[ObjectRequest](w, r, true, true, nil, nil)
+	req := HandleRequest[ObjectRequest](w, r, true, false, nil, nil)
 	if req == nil {
 		return
 	}
@@ -463,14 +472,18 @@ func (s *Server) ListObjectsV2(w http.ResponseWriter, r *http.Request) {
 			objects[i].Location.Key = urlEncode(string(objects[i].Location.Key))
 		}
 	}
-	var commonPrefixes []CommonPrefix
+	commonPrefixes := make(map[string]struct{})
 	if req.Delimiter != "" {
-		for _, obj := range objects {
+		for i := 0; i < len(objects); i++ {
+			obj := objects[i]
 			truncatedKey := obj.Location.Key[len(req.Prefix):]
 			if !strings.Contains(truncatedKey, req.Delimiter) {
 				continue
 			}
-			commonPrefixes = append(commonPrefixes, CommonPrefix{Prefix: req.Prefix + truncatedKey[:strings.Index(truncatedKey, req.Delimiter)+1]})
+			// Remove the object from the list of objects, since it is a common prefix.
+			objects = append(objects[:i], objects[i+1:]...)
+			i--
+			commonPrefixes[req.Prefix+truncatedKey[:strings.Index(truncatedKey, req.Delimiter)+1]] = struct{}{}
 		}
 	}
 
@@ -492,7 +505,6 @@ func (s *Server) ListObjectsV2(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response := ListBucketResult{
-		CommonPrefixes:    commonPrefixes,
 		Contents:          contents,
 		Delimiter:         req.Delimiter,
 		EncodingType:      req.EncodingType,
@@ -504,6 +516,14 @@ func (s *Server) ListObjectsV2(w http.ResponseWriter, r *http.Request) {
 		StartAfter:        req.StartAfter,
 		ContinuationToken: req.ContinuationToken,
 	}
+
+	if len(commonPrefixes) > 0 {
+		response.CommonPrefixes = make([]string, 0, len(commonPrefixes))
+		for prefix := range commonPrefixes {
+			response.CommonPrefixes = append(response.CommonPrefixes, prefix)
+		}
+	}
+
 	if isTruncated {
 		response.NextContinuationToken = req.ContinuationToken + 1
 	}
@@ -517,10 +537,7 @@ func (s *Server) DeleteObject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	obj, err := objectManager.GetObject(object.ObjectLocation{
-		Bucket: object.Bucket{Name: req.BucketName},
-		Key:    r.URL.Path,
-	})
+	obj, err := objectManager.GetObject(req.GetObjectLocation())
 	if err != nil {
 		writeS3Error(w, http.StatusInternalServerError, "InternalError", err.Error(), req.BucketName)
 		return
@@ -552,10 +569,7 @@ func (s *Server) DeleteObject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = objectManager.DeleteObject(object.ObjectLocation{
-		Bucket: object.Bucket{Name: req.BucketName},
-		Key:    r.URL.Path,
-	})
+	err = objectManager.DeleteObject(req.GetObjectLocation())
 	if err != nil {
 		writeS3Error(w, http.StatusInternalServerError, "InternalError", err.Error(), req.BucketName)
 		return
@@ -587,10 +601,7 @@ func (s *Server) DeleteObjects(w http.ResponseWriter, r *http.Request) {
 	var deleteErrors []DeleteError
 
 	for _, obj := range objectsToDelete.Objects {
-		err := objectManager.DeleteObject(object.ObjectLocation{
-			Bucket: object.Bucket{Name: req.BucketName},
-			Key:    obj.Key,
-		})
+		err := objectManager.DeleteObject(req.GetObjectLocation())
 		if err != nil {
 			deleteErrors = append(deleteErrors, DeleteError{
 				Code:    "InternalError",
@@ -621,10 +632,7 @@ func (s *Server) GetObjectAcl(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, err := objectManager.GetObject(object.ObjectLocation{
-		Bucket: object.Bucket{Name: req.BucketName},
-		Key:    r.URL.Path,
-	})
+	_, err := objectManager.GetObject(req.GetObjectLocation())
 	if err != nil {
 		writeS3Error(w, http.StatusInternalServerError, "InternalError", err.Error(), req.BucketName)
 		return
@@ -656,17 +664,12 @@ func (s *Server) GetObjectTagging(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, err := objectManager.GetObject(object.ObjectLocation{
-		Bucket: object.Bucket{Name: req.BucketName},
-		Key:    r.URL.Path,
-	})
+	_, err := objectManager.GetObject(req.GetObjectLocation())
 	if err != nil {
 		writeS3Error(w, http.StatusInternalServerError, "InternalError", err.Error(), req.BucketName)
 		return
 	}
-	response := Tagging{
-		TagSet: nil,
-	}
+	response := Tagging{}
 
 	WriteResponse(w, http.StatusOK, nil, response, nil)
 }

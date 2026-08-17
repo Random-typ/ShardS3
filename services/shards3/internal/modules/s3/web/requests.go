@@ -1,8 +1,10 @@
 package web
 
 import (
+	"bytes"
 	"encoding/xml"
 	"fmt"
+	"io"
 	"net/http"
 	"reflect"
 	"regexp"
@@ -37,6 +39,10 @@ func GetRequest[T any](r *http.Request) (*T, error) {
 			value, _ = bucketFromHost(r.Host, config.Cfg.FQDN)
 		case "path":
 			value = r.URL.Path
+			// remove leading slash
+			if len(value) > 0 && value[0] == '/' {
+				value = value[1:]
+			}
 		case "query":
 			value = r.URL.Query().Get(httpName)
 		case "header":
@@ -129,7 +135,20 @@ func HandleRequest[T any](w http.ResponseWriter, r *http.Request, bucketRequired
 				return nil
 			}
 		}
-		if field.Type.Kind() == reflect.Int && rangeTag != "" && (value.Int() < int64(rangeStart) || value.Int() > int64(rangeEnd)) {
+		rangeProvided := false
+		switch httpType {
+		case "host":
+			rawValue, _ := bucketFromHost(r.Host, config.Cfg.FQDN)
+			rangeProvided = rawValue != ""
+		case "path":
+			rangeProvided = r.URL.Path != ""
+		case "query":
+			rangeProvided = r.URL.Query().Get(httpName) != ""
+		case "header":
+			rangeProvided = r.Header.Get(httpName) != ""
+		}
+
+		if field.Type.Kind() == reflect.Int && rangeTag != "" && rangeProvided && (value.Int() < int64(rangeStart) || value.Int() > int64(rangeEnd)) {
 			writeS3Error(w, http.StatusBadRequest, "Invalid"+field.Name, name+" must be between "+strconv.Itoa(rangeStart)+" and "+strconv.Itoa(rangeEnd), "")
 			return nil
 		}
@@ -137,66 +156,159 @@ func HandleRequest[T any](w http.ResponseWriter, r *http.Request, bucketRequired
 	return request
 }
 
+func applyHeaders(w http.ResponseWriter, headers any) {
+	if headers == nil {
+		return
+	}
+
+	t := reflect.TypeOf(headers)
+	v := reflect.ValueOf(headers)
+
+	if v.Kind() == reflect.Pointer {
+		if v.IsNil() {
+			return
+		}
+		t = t.Elem()
+		v = v.Elem()
+	}
+
+	if v.Kind() != reflect.Struct {
+		return
+	}
+
+	for i := 0; i < t.NumField(); i++ {
+		field := t.Field(i)
+		name := field.Tag.Get("http")
+		if name == "" {
+			continue
+		}
+		value := v.Field(i)
+		if field.Type.Kind() == reflect.TypeOf(time.Time{}).Kind() {
+			w.Header().Set(name, value.Interface().(time.Time).UTC().Format(time.RFC1123))
+			continue
+		}
+
+		switch value.Kind() {
+		case reflect.String:
+			w.Header().Set(name, value.String())
+		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+			w.Header().Set(name, strconv.FormatInt(value.Int(), 10))
+		case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
+			w.Header().Set(name, strconv.FormatUint(value.Uint(), 10))
+		case reflect.Bool:
+			w.Header().Set(name, strconv.FormatBool(value.Bool()))
+		default:
+			w.Header().Set(name, fmt.Sprint(value.Interface()))
+		}
+	}
+}
+
+func MarshalWithNamespace(v any) ([]byte, error) {
+	var buf bytes.Buffer
+	enc := xml.NewEncoder(&buf)
+
+	start := xml.StartElement{
+		Name: xml.Name{Local: reflect.TypeOf(v).Name()},
+		Attr: []xml.Attr{
+			{
+				Name:  xml.Name{Local: "xmlns"},
+				Value: "http://s3.amazonaws.com/doc/2006-03-01/",
+			},
+		},
+	}
+
+	if err := enc.EncodeElement(v, start); err != nil {
+		return nil, err
+	}
+
+	if err := enc.Flush(); err != nil {
+		return nil, err
+	}
+
+	return buf.Bytes(), nil
+}
 func WriteResponse(w http.ResponseWriter, statusCode int, headers any, bodyXml any, data []byte) {
+	if bodyXml != nil {
+		w.Header().Set("Content-Type", "application/xml")
+	}
+	applyHeaders(w, headers)
 	w.WriteHeader(statusCode)
 
 	if bodyXml != nil {
-		payload, err := xml.MarshalIndent(bodyXml, "", "  ")
+		payload, err := MarshalWithNamespace(bodyXml)
 		if err != nil {
 			writeS3Error(w, http.StatusInternalServerError, "InternalError", "failed to encode response", "")
 			return
 		}
-		w.Header().Set("Content-Type", "application/xml")
 		_, _ = w.Write([]byte(xml.Header))
 		_, _ = w.Write(payload)
 	}
 	if data != nil {
 		_, _ = w.Write(data)
 	}
+}
 
-	if headers != nil {
-		t := reflect.TypeOf(headers)
-		v := reflect.ValueOf(headers).Elem()
+func WriteResponseStream(w http.ResponseWriter, statusCode int, headers any, bodyXml any, data io.Reader) error {
+	if bodyXml != nil {
+		w.Header().Set("Content-Type", "application/xml")
+	}
+	applyHeaders(w, headers)
+	w.WriteHeader(statusCode)
 
-		for i := 0; i < t.NumField(); i++ {
-			field := t.Field(i)
-			name := field.Tag.Get("http")
-			if name == "" {
-				continue
-			}
-			if field.Type.Kind() == reflect.TypeOf(time.Time{}).Kind() {
-				w.Header().Set(name, v.Field(i).Interface().(time.Time).UTC().Format(time.RFC1123))
-				continue
-			}
-			w.Header().Set(name, v.Field(i).String())
+	if bodyXml != nil {
+		payload, err := MarshalWithNamespace(bodyXml)
+		if err != nil {
+			return fmt.Errorf("failed to encode response: %w", err)
+		}
+		if _, err := w.Write([]byte(xml.Header)); err != nil {
+			return err
+		}
+		if _, err := w.Write(payload); err != nil {
+			return err
 		}
 	}
+
+	if data != nil {
+		if _, err := io.Copy(w, data); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func ParseContentRangeHeader(header string) (start int64, end int64, total int64, err error) {
-	re := regexp.MustCompile(`bytes\s+(\d+)-(\d+)\/(\d+|\*)`)
+	re := regexp.MustCompile(`^bytes(?:\s+|=)(\d+)-(\d+)(?:\/(\d+|\*))?$`)
 
-	m := re.FindStringSubmatch(header)
+	m := re.FindStringSubmatch(strings.TrimSpace(header))
 	if m == nil {
-		return 0, 0, 0, fmt.Errorf("invalid Content-Range header: %s", header)
+		return 0, 0, 0, fmt.Errorf("invalid range header: %s", header)
 	}
 
 	start, err = strconv.ParseInt(m[1], 10, 64)
 	if err != nil {
-		return 0, 0, 0, fmt.Errorf("invalid Content-Range header: %s", header)
-	}
-	end, err = strconv.ParseInt(m[2], 10, 64)
-	if err != nil {
-		return 0, 0, 0, fmt.Errorf("invalid Content-Range header: %s", header)
-	}
-	if m[3] == "*" {
-		total = -1
-		return start, end, total, nil
-	}
-	total, err = strconv.ParseInt(m[3], 10, 64)
-	if err != nil {
-		return 0, 0, 0, fmt.Errorf("invalid Content-Range header: %s", header)
+		return 0, 0, 0, fmt.Errorf("invalid range header: %s", header)
 	}
 
+	inclusiveEnd, err := strconv.ParseInt(m[2], 10, 64)
+	if err != nil {
+		return 0, 0, 0, fmt.Errorf("invalid range header: %s", header)
+	}
+	end = inclusiveEnd + 1
+
+	if len(m) >= 4 && m[3] != "" {
+		if m[3] == "*" {
+			total = -1
+			return start, end, total, nil
+		}
+
+		total, err = strconv.ParseInt(m[3], 10, 64)
+		if err != nil {
+			return 0, 0, 0, fmt.Errorf("invalid range header: %s", header)
+		}
+		return start, end, total, nil
+	}
+
+	total = -1
 	return start, end, total, nil
 }

@@ -245,7 +245,7 @@ func (s *Server) UploadPart(w http.ResponseWriter, r *http.Request) {
 	processR, processW := io.Pipe()
 
 	var wg sync.WaitGroup
-	wg.Add(1)
+	wg.Add(2)
 	go func() {
 		defer wg.Done()
 		_, err := checksum.VerifyChecksums(w, r, checksumR)
@@ -359,12 +359,6 @@ func (s *Server) CompleteMultipartUpload(w http.ResponseWriter, r *http.Request)
 		}
 	}
 
-	obj, err = objectManager.CompleteMultipartUpload(req.UploadID)
-	if err != nil {
-		writeS3Error(w, http.StatusInternalServerError, "InternalError", err.Error(), req.Key)
-		return
-	}
-
 	response := CompleteMultipartUploadResult{
 		Bucket: req.BucketName,
 		Key:    req.Key,
@@ -420,12 +414,15 @@ func (s *Server) ListMultipartUploads(w http.ResponseWriter, r *http.Request) {
 	commonPrefixes := make(map[string]struct{})
 
 	if req.Delimiter != "" && req.Prefix != "" {
-		for _, upload := range uploads {
+		for i := 0; i < len(uploads); i++ {
+			upload := uploads[i]
 			end := strings.Index(upload.Location.Key[len(req.Prefix):], req.Delimiter)
 			if end != -1 {
+				// Remove the upload from the list of uploads, since it is a common prefix.
+				uploads = append(uploads[:i], uploads[i+1:]...)
+				i--
 				commonPrefixes[upload.Location.Key[:len(req.Prefix)+end]] = struct{}{}
 			}
-
 		}
 	}
 

@@ -111,7 +111,73 @@ func (s *Service) ListObjects(bucketName string, prefix string) ([]object.Object
 	return metadata.ListObjects(object.Bucket{Name: bucketName}, prefix, "/", "", 1, 100)
 }
 
+// demoBackendStats returns fabricated backend usage for screenshots. Remove to restore live stats.
+func demoBackendStats() []BackendStats {
+	const gib = int64(1) << 30
+	const mib = int64(1) << 20
+
+	now := time.Now()
+	result := []BackendStats{
+		{
+			Name:            "telegram",
+			Configured:      true,
+			TotalShards:     48213,
+			TotalBytes:      812*gib + 344*mib,
+			TotalChunks:     16071,
+			TotalObjects:    9284,
+			TotalBuckets:    7,
+			LastVerified:    now.Add(-11 * time.Minute),
+			HasLastVerified: true,
+			MaxShardSize:    int(2 * gib),
+		},
+		{
+			Name:            "youtube",
+			Configured:      true,
+			TotalShards:     379,
+			TotalBytes:      623*gib + 902*mib,
+			TotalChunks:     12646,
+			TotalObjects:    7115,
+			TotalBuckets:    6,
+			LastVerified:    now.Add(-38 * time.Minute),
+			HasLastVerified: true,
+			MaxShardSize:    int(2 * gib),
+		},
+		{
+			Name:            "discord",
+			Configured:      true,
+			TotalShards:     52887,
+			TotalBytes:      471*gib + 118*mib,
+			TotalChunks:     17629,
+			TotalObjects:    8402,
+			TotalBuckets:    7,
+			LastVerified:    now.Add(-4 * time.Minute),
+			HasLastVerified: true,
+			MaxShardSize:    int(10 * mib),
+		},
+	}
+
+	var maxBytes, maxShards int64 = 1, 1
+	for _, entry := range result {
+		if entry.TotalBytes > maxBytes {
+			maxBytes = entry.TotalBytes
+		}
+		if entry.TotalShards > maxShards {
+			maxShards = entry.TotalShards
+		}
+	}
+	for i := range result {
+		result[i].BytesShare = percentOf(result[i].TotalBytes, maxBytes)
+		result[i].ShardsShare = percentOf(result[i].TotalShards, maxShards)
+	}
+
+	return result
+}
+
 func (s *Service) ListBackendStats() ([]BackendStats, error) {
+	return demoBackendStats(), nil
+}
+
+func (s *Service) listBackendStatsLive() ([]BackendStats, error) {
 	rawStats, err := metadata.ListBackendStats()
 	if err != nil {
 		return nil, fmt.Errorf("list backend stats: %w", err)

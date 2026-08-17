@@ -38,7 +38,6 @@ func PutObjectStream(location object.ObjectLocation, r io.Reader) (object.Object
 	if err != nil {
 		return object.Object{}, err
 	}
-
 	var obj = object.Object{
 		Location:     location,
 		Size:         size,

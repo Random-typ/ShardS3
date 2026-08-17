@@ -3,6 +3,7 @@ package objectManager
 import (
 	"bytes"
 	"errors"
+	"io"
 	"math/rand"
 	"os"
 	"path/filepath"
@@ -294,4 +295,64 @@ func TestObjectLifecycle_Streaming(t *testing.T) {
 	}
 
 	assertShardFilesRemoved(t, shardLocations)
+}
+
+func TestObjectDownloadStreaming_RangeAndFull(t *testing.T) {
+	setupTest(t)
+
+	interfaces.SetAvailableBackends(interfaces.RegisterFileTestBackends(3))
+	config.Cfg.FailureTolerance = 1
+	config.Cfg.ChunkConcurrency = 4
+
+	originalChunkSize := config.Cfg.ChunkSize
+	config.Cfg.ChunkSize = 64 * 1024
+	t.Cleanup(func() {
+		config.Cfg.ChunkSize = originalChunkSize
+	})
+
+	payloadSize := 3*config.Cfg.ChunkSize + 123
+	data := randomData(99, payloadSize)
+
+	location := object.ObjectLocation{Bucket: object.Bucket{Name: "stream-range-bucket"}, Key: "stream-range-object"}
+
+	if _, err := PutObjectStream(location, bytes.NewReader(data)); err != nil {
+		t.Fatalf("PutObjectStream() error: %v", err)
+	}
+
+	obj, err := GetObject(location)
+	if err != nil {
+		t.Fatalf("GetObject() error: %v", err)
+	}
+
+	fullReader, err := obj.GetDataStream(0, 0)
+	if err != nil {
+		t.Fatalf("GetDataStream(full) error: %v", err)
+	}
+	defer fullReader.Close()
+
+	fullData, err := io.ReadAll(fullReader)
+	if err != nil {
+		t.Fatalf("io.ReadAll(full stream) error: %v", err)
+	}
+	if !bytes.Equal(fullData, data) {
+		t.Fatal("full streamed data does not match original")
+	}
+
+	start := int64(config.Cfg.ChunkSize / 2)
+	end := int64(config.Cfg.ChunkSize*2 + 77)
+
+	rangeReader, err := obj.GetDataStream(start, end)
+	if err != nil {
+		t.Fatalf("GetDataStream(range) error: %v", err)
+	}
+	defer rangeReader.Close()
+
+	rangeData, err := io.ReadAll(rangeReader)
+	if err != nil {
+		t.Fatalf("io.ReadAll(range stream) error: %v", err)
+	}
+	expected := data[start:end]
+	if !bytes.Equal(rangeData, expected) {
+		t.Fatal("range streamed data does not match expected slice")
+	}
 }

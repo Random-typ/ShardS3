@@ -3,7 +3,6 @@ package shard
 import (
 	"bytes"
 	"fmt"
-	"log"
 	"math"
 	"shards3/services/shards3/internal/modules/storage/interfaces"
 	"shards3/services/shards3/internal/platform/config"
@@ -78,13 +77,10 @@ func getShardParityCount(backendCount int, dataShardsCount int) int {
 func putShards(shards []RawShard, backend interfaces.BackendType) ([]Shard, error) {
 	storedShards := make([]Shard, 0, len(shards))
 	for _, shard := range shards {
-		log.Printf("trace shard_upload begin backend=%s range=[%d,%d] bytes=%d", backend, shard.First, shard.Last, len(shard.data))
 		location, err := interfaces.PutShard(backend, shard.data)
 		if err != nil {
-			log.Printf("trace shard_upload failed backend=%s range=[%d,%d] err=%v", backend, shard.First, shard.Last, err)
 			return nil, err
 		}
-		log.Printf("trace shard_upload done backend=%s range=[%d,%d] location=%s", backend, shard.First, shard.Last, location)
 		storedShards = append(storedShards, Shard{
 			First:    shard.First,
 			Last:     shard.Last,

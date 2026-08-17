@@ -2,3 +2,4 @@
 shards3.db*
 *.key
 *.exe
+.env

@@ -209,10 +209,6 @@ func PutPart(part object.MultipartPart) error {
 		return fmt.Errorf("clear old part chunks: %w", err)
 	}
 
-	if err := insertPartChunks(tx, string(upload.Location.Bucket.Name), part.UploadID, part.PartNumber, part.Chunks); err != nil {
-		return err
-	}
-
 	if _, err := tx.Exec(`
 		INSERT INTO multipart_parts (upload_id, part_number, ETag, size, created_at)
 		VALUES (?, ?, ?, ?, ?)
@@ -223,6 +219,10 @@ func PutPart(part object.MultipartPart) error {
 		part.UploadID, part.PartNumber, strconv.FormatUint(part.ETag, 10), part.Size, time.Now().UTC(),
 	); err != nil {
 		return fmt.Errorf("upsert multipart part: %w", err)
+	}
+
+	if err := insertPartChunks(tx, string(upload.Location.Bucket.Name), part.UploadID, part.PartNumber, part.Chunks); err != nil {
+		return err
 	}
 
 	return tx.Commit()
