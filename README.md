@@ -13,7 +13,7 @@ Data is split among multiple backends **similar to RAID** using reed-solomon enc
 > for backup and data storage may be against their 
 > policies.  
 > A violation of these policies could lead to 
-> consequences. Including banned accounts,
+> penalties. Including banned accounts,
 > blocked phone numbers, data loss or other consequences.  
 > Use this software at your own risk.
 
