@@ -9,15 +9,8 @@ services:
       - "8080:8080"
     volumes:
       - ./testDir:/app/data
-      - ../services/shards3/backends.yaml:/app/data/backends.yaml
+      - ../shards3/backends.yaml:/app/data/backends.yaml
     working_dir: /app/data
-
-  dashboard:
-    build:
-      context: ..
-      dockerfile: container/Containerfile.dashboard
-    depends_on:
-      - shards3
 
 #volumes:
 #  shards3_data:

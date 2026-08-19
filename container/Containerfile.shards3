@@ -3,14 +3,14 @@
 FROM golang:1.26-alpine AS builder
 WORKDIR /src
 
-COPY services/shards3/go.mod services/shards3/go.sum ./services/shards3/
+COPY shards3/go.mod shards3/go.sum ./shards3/
 RUN --mount=type=cache,target=/go/pkg/mod \
-    cd services/shards3 && go mod download
+    cd shards3 && go mod download
 
-COPY services/shards3 ./services/shards3
+COPY shards3 ./shards3
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
-    cd services/shards3 && CGO_ENABLED=0 GOOS=linux go build -o /out/s3-api ./cmd/s3-api
+    cd shards3 && CGO_ENABLED=0 GOOS=linux go build -o /out/s3-api ./cmd/s3-api
 
 FROM alpine:3.22
 WORKDIR /app
