@@ -34,7 +34,7 @@ While this looks pretty good, it can be optimized further by merging the shards 
 For a detailed explanation of the program you can checkout the [docs](./docs)
 
 ## Helm
-> Work In Progress
+> Work In Progress  
 ShardS3 can be deployed via Helm to a Kubernetes Cluster.
 
 ## Docker/Podman
